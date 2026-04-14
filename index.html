@@ -645,9 +645,19 @@
         </div>
       </div>
       <div class="chart-card" id="deptChartCard">
-        <h3 id="deptChartTitle">Hours by Department / Component</h3>
+        <h3 id="deptChartTitle">Hours by Supported Department</h3>
         <div class="chart-wrap medium">
           <canvas id="chartDept"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <!-- Charts Row 3 -->
+    <div class="charts-row">
+      <div class="chart-card" id="projectChartCard" style="display:none">
+        <h3>Hours by Project Number</h3>
+        <div class="chart-wrap tall">
+          <canvas id="chartProject"></canvas>
         </div>
       </div>
     </div>
@@ -927,6 +937,15 @@ function processData(issues, worklogs, sprint) {
     }
   });
 
+  // By project number
+  const byProject = {};
+  issues.forEach(issue => {
+    const proj = issue.fields?.projectNumber;
+    if (!proj) return;
+    const spent = issue.fields.timespent || 0;
+    byProject[proj] = (byProject[proj] || 0) + spent;
+  });
+
   // By day (for sprint window, or last 30 days)
   const byDay = {};
   allEntries.forEach(e => {
@@ -940,7 +959,7 @@ function processData(issues, worklogs, sprint) {
   const withTime       = issues.filter(i => (i.fields.timespent || 0) > 0).length;
 
   return {
-    allEntries, byAssignee, byType, byDept, byDay,
+    allEntries, byAssignee, byType, byDept, byProject, byDay,
     totalSeconds, totalEstimate, members, withTime,
     totalIssues: issues.length,
     sprint,
@@ -1030,6 +1049,7 @@ function applyDateFilter() {
   renderDailyChart(filtered);
   renderTypeChart(filtered);
   renderDeptChart(filtered);
+  renderProjectChart(filtered);
   renderTableFiltered(filtered);
 }
 
@@ -1050,8 +1070,8 @@ function filterAndReaggregate(processed, from, to) {
     issueSeconds[e.issueKey] = (issueSeconds[e.issueKey] || 0) + e.seconds;
   });
 
-  // byType and byDept use per-issue filtered time
-  const byType = {}, byDept = {};
+  // byType, byDept, byProject use per-issue filtered time
+  const byType = {}, byDept = {}, byProject = {};
   S.issues.forEach(issue => {
     const secs = issueSeconds[issue.key];
     if (!secs) return;
@@ -1063,6 +1083,8 @@ function filterAndReaggregate(processed, from, to) {
     } else {
       depts.forEach(d => { byDept[d] = (byDept[d] || 0) + secs; });
     }
+    const proj = issue.fields?.projectNumber;
+    if (proj) byProject[proj] = (byProject[proj] || 0) + secs;
   });
 
   const totalSeconds = entries.reduce((s, e) => s + e.seconds, 0);
@@ -1074,6 +1096,7 @@ function filterAndReaggregate(processed, from, to) {
     byDay,
     byType,
     byDept,
+    byProject,
     totalSeconds,
     issueSeconds,                           // filtered per-issue time
     members:   new Set(entries.map(e => e.assignee)).size,
@@ -1248,6 +1271,41 @@ function renderTypeChart(d) {
       plugins: {
         legend: { position: 'right', labels: { font: { size: 12 }, boxWidth: 12, padding: 12 } },
         tooltip: { callbacks: { label: ctx => ` ${ctx.label}: ${ctx.raw}h` } },
+      },
+    },
+  });
+}
+
+function renderProjectChart(d) {
+  destroyChart('project');
+  const sorted = Object.entries(d.byProject || {})
+    .filter(([, s]) => s > 0)
+    .sort((a, b) => b[1] - a[1]);
+  if (sorted.length === 0) {
+    document.getElementById('projectChartCard').style.display = 'none';
+    return;
+  }
+  document.getElementById('projectChartCard').style.display = '';
+  const labels = sorted.map(([t]) => t);
+  const values = sorted.map(([, s]) => +(secToHours(s).toFixed(1)));
+  const ctx = document.getElementById('chartProject').getContext('2d');
+  S.charts.project = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [{ data: values, backgroundColor: PALETTE, borderRadius: 4, borderSkipped: false }],
+    },
+    options: {
+      indexAxis: 'y',
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: { callbacks: { label: ctx => ` ${ctx.raw}h` } },
+      },
+      scales: {
+        x: { beginAtZero: true, ticks: { callback: v => `${v}h` }, grid: { color: '#F0F0F0' } },
+        y: { grid: { display: false }, ticks: { font: { size: 12 } } },
       },
     },
   });
