@@ -224,35 +224,62 @@ def process_scrum_board(board_id, board_name, board_type):
 
 
 def process_kanban_board(board_id, board_name, board_type):
-    """Kanban boards have no sprints — use rolling 2-week windows."""
+    """
+    Kanban boards have no sprints.
+    Fetch all board issues directly via the board/issue endpoint,
+    attach worklogs, then bucket into rolling 2-week windows.
+    """
     cutoff = (datetime.now(timezone.utc) - timedelta(days=RECENT_DAYS)).strftime('%Y-%m-%d')
+    print(f'  Fetching kanban issues (worklogDate >= {cutoff})…', file=sys.stderr)
+
+    try:
+        # Use the board's own issue endpoint — no JQL boardProjects() needed
+        issues = get_all(
+            f'/rest/agile/1.0/board/{board_id}/issue',
+            {
+                'jql':    f'worklogDate >= "{cutoff}"',
+                'fields': ISSUE_FIELDS,
+            },
+            item_key='issues',
+        )
+    except Exception as e:
+        print(f'  Error fetching kanban issues: {e}', file=sys.stderr)
+        return None
+
+    if not issues:
+        print('  No issues with recent worklogs — skipping.', file=sys.stderr)
+        return None
+
+    print(f'  {len(issues)} issues — attaching worklogs…', file=sys.stderr)
+    attach_worklogs(issues)
+
+    # Bucket into rolling 2-week windows
     windows = build_time_windows(RECENT_DAYS)
     output_sprints = []
-
     for label, start_d, end_d in windows:
-        jql = (
-            f'project in boardProjects("{board_id}") '
-            f'AND worklogDate >= "{start_d}" AND worklogDate <= "{end_d}" '
-            f'ORDER BY updated DESC'
-        )
-        print(f'  Window: {label}', file=sys.stderr)
-        try:
-            issues = fetch_issues_by_jql(jql)
-            if issues:
-                output_sprints.append({
-                    'id':        f'{board_id}_{start_d}',
-                    'name':      label,
-                    'state':     'active' if label == windows[0][0] else 'closed',
-                    'startDate': start_d + 'T00:00:00.000Z',
-                    'endDate':   end_d   + 'T23:59:59.000Z',
-                    'goal':      '',
-                    'issues':    issues,
-                })
-        except Exception as e:
-            print(f'    Error: {e}', file=sys.stderr)
+        window_issues = [
+            slim_issue(i) for i in issues
+            if any(
+                start_d <= wl.get('started', '')[:10] <= end_d
+                for wl in (i.get('worklogs') or [])
+            )
+        ]
+        if window_issues:
+            output_sprints.append({
+                'id':        f'{board_id}_{start_d}',
+                'name':      label,
+                'state':     'active' if label == windows[0][0] else 'closed',
+                'startDate': start_d + 'T00:00:00.000Z',
+                'endDate':   end_d   + 'T23:59:59.000Z',
+                'goal':      '',
+                'issues':    window_issues,
+            })
 
     if not output_sprints:
+        print('  No worklogs fell within any time window — skipping.', file=sys.stderr)
         return None
+
+    print(f'  {len(output_sprints)} time window(s) with data.', file=sys.stderr)
     return {'id': board_id, 'name': board_name, 'type': board_type, 'sprints': output_sprints}
 
 
