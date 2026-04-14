@@ -169,6 +169,45 @@
     .auto-refresh-label { font-size: 12px; color: var(--muted); display: flex; align-items: center; gap: 5px; cursor: pointer; }
     .auto-refresh-label input { cursor: pointer; }
 
+    /* ── DATE FILTER BAR ── */
+    .date-bar {
+      background: var(--card);
+      border-bottom: 2px solid var(--blue-lt);
+      padding: 8px 20px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    .date-bar label { font-size: 12px; font-weight: 600; color: var(--muted); white-space: nowrap; }
+    .preset-group { display: flex; gap: 4px; }
+    .preset-btn {
+      cursor: pointer;
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 3px 10px;
+      font-size: 12px;
+      font-weight: 500;
+      background: #fff;
+      color: var(--muted);
+      transition: all .15s;
+    }
+    .preset-btn:hover  { border-color: var(--blue-lt); color: var(--blue); }
+    .preset-btn.active { background: var(--blue); border-color: var(--blue); color: #fff; }
+    .date-inputs { display: flex; align-items: center; gap: 6px; }
+    .date-inputs input[type="date"] {
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 4px 8px;
+      font-size: 12px;
+      color: var(--text);
+      outline: none;
+      background: #fff;
+    }
+    .date-inputs input[type="date"]:focus { border-color: var(--blue-lt); }
+    .date-inputs span { font-size: 12px; color: var(--muted); }
+    #dateRangeLabel { font-size: 12px; color: var(--blue); font-weight: 600; margin-left: 4px; }
+
     /* ── MAIN LAYOUT ── */
     #main { padding: 20px; max-width: 1400px; margin: 0 auto; }
 
@@ -506,6 +545,25 @@
   </div>
 </div>
 
+<!-- ══════════════════════ DATE FILTER BAR ══════════════════════ -->
+<div class="date-bar" id="dateBar" style="display:none">
+  <label>Date Range</label>
+  <div class="preset-group">
+    <button class="preset-btn" onclick="setPreset(7)">7 days</button>
+    <button class="preset-btn" onclick="setPreset(14)">14 days</button>
+    <button class="preset-btn active" onclick="setPreset(30)">30 days</button>
+    <button class="preset-btn" onclick="setPreset(90)">90 days</button>
+    <button class="preset-btn" onclick="setPreset(0)">All</button>
+  </div>
+  <div class="date-inputs">
+    <span>From</span>
+    <input type="date" id="dateFrom" onchange="onCustomDate()" />
+    <span>to</span>
+    <input type="date" id="dateTo" onchange="onCustomDate()" />
+  </div>
+  <span id="dateRangeLabel"></span>
+</div>
+
 <!-- ══════════════════════ MAIN ══════════════════════ -->
 <main id="main">
 
@@ -646,6 +704,8 @@ const S = {
   sortCol: 'logged',
   sortDir: 'desc',
   tableRows: [],        // all rows (pre-filter)
+  dateFrom: null,       // active date filter start (YYYY-MM-DD)
+  dateTo:   null,       // active date filter end   (YYYY-MM-DD)
   autoTimer: null,
   autoCountdown: null,
   charts: {},
@@ -895,6 +955,149 @@ function getDeptValues(issue) {
   if (Array.isArray(val)) return val.map(v => v.name || v.value || String(v));
   if (typeof val === 'object') return [val.name || val.value || JSON.stringify(val)];
   return [String(val)];
+}
+
+// ═══════════════════════════════════════════════════════
+//  DATE FILTER
+// ═══════════════════════════════════════════════════════
+function setPreset(days) {
+  // Highlight active preset button
+  document.querySelectorAll('.preset-btn').forEach(b => b.classList.remove('active'));
+  event.target.classList.add('active');
+
+  const today = new Date();
+  const pad   = n => String(n).padStart(2, '0');
+  const fmt   = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+  const toVal = fmt(today);
+
+  if (days === 0) {
+    // All — clear the filter
+    S.dateFrom = null;
+    S.dateTo   = null;
+    document.getElementById('dateFrom').value = '';
+    document.getElementById('dateTo').value   = '';
+  } else {
+    const from = new Date(today);
+    from.setDate(today.getDate() - (days - 1));
+    S.dateFrom = fmt(from);
+    S.dateTo   = toVal;
+    document.getElementById('dateFrom').value = S.dateFrom;
+    document.getElementById('dateTo').value   = S.dateTo;
+  }
+  applyDateFilter();
+}
+
+function onCustomDate() {
+  // Clear preset highlight when user edits dates manually
+  document.querySelectorAll('.preset-btn').forEach(b => b.classList.remove('active'));
+  S.dateFrom = document.getElementById('dateFrom').value || null;
+  S.dateTo   = document.getElementById('dateTo').value   || null;
+  applyDateFilter();
+}
+
+function applyDateFilter() {
+  if (!S.processed) return;
+  const filtered = filterAndReaggregate(S.processed, S.dateFrom, S.dateTo);
+  updateDateRangeLabel();
+  renderCards(filtered);
+  renderAssigneeChart(filtered);
+  renderDailyChart(filtered);
+  renderTypeChart(filtered);
+  renderDeptChart(filtered);
+  renderTableFiltered(filtered);
+}
+
+function filterAndReaggregate(processed, from, to) {
+  const entries = processed.allEntries.filter(e =>
+    (!from || e.dateKey >= from) && (!to || e.dateKey <= to)
+  );
+
+  // Rebuild aggregates from filtered entries
+  const byAssignee = {};
+  const byDay      = {};
+  const issueSeconds = {};
+
+  entries.forEach(e => {
+    if (!byAssignee[e.assignee]) byAssignee[e.assignee] = { seconds: 0, avatarUrl: e.assigneeAvatarUrl };
+    byAssignee[e.assignee].seconds += e.seconds;
+    byDay[e.dateKey] = (byDay[e.dateKey] || 0) + e.seconds;
+    issueSeconds[e.issueKey] = (issueSeconds[e.issueKey] || 0) + e.seconds;
+  });
+
+  // byType and byDept use per-issue filtered time
+  const byType = {}, byDept = {};
+  S.issues.forEach(issue => {
+    const secs = issueSeconds[issue.key];
+    if (!secs) return;
+    const type = issue.fields.issuetype?.name || 'Unknown';
+    byType[type] = (byType[type] || 0) + secs;
+    const depts = getDeptValues(issue);
+    if (depts.length === 0) {
+      byDept['(none)'] = (byDept['(none)'] || 0) + secs;
+    } else {
+      depts.forEach(d => { byDept[d] = (byDept[d] || 0) + secs; });
+    }
+  });
+
+  const totalSeconds = entries.reduce((s, e) => s + e.seconds, 0);
+
+  return {
+    ...processed,
+    allEntries:    entries,
+    byAssignee,
+    byDay,
+    byType,
+    byDept,
+    totalSeconds,
+    issueSeconds,                           // filtered per-issue time
+    members:   new Set(entries.map(e => e.assignee)).size,
+    withTime:  Object.keys(issueSeconds).length,
+  };
+}
+
+function updateDateRangeLabel() {
+  const el = document.getElementById('dateRangeLabel');
+  if (!S.dateFrom && !S.dateTo) {
+    el.textContent = '';
+    return;
+  }
+  const fmt = d => new Date(d + 'T12:00:00').toLocaleDateString(undefined, { month:'short', day:'numeric', year:'numeric' });
+  el.textContent = `Showing ${S.dateFrom ? fmt(S.dateFrom) : 'start'} → ${S.dateTo ? fmt(S.dateTo) : 'today'}`;
+}
+
+function renderTableFiltered(filtered) {
+  // Re-build tableRows using filtered per-issue seconds instead of issue.fields.timespent
+  const issueSeconds = filtered.issueSeconds || {};
+  const maxLogged = Math.max(...S.issues.map(i => issueSeconds[i.key] || 0), 1);
+
+  S.tableRows = S.issues.map(issue => {
+    const f      = issue.fields;
+    const logged = issueSeconds[issue.key] || 0;
+    const est    = f.timeoriginalestimate || 0;
+    const rem    = f.timeestimate || 0;
+    const pct    = est > 0 ? Math.min((logged / est) * 100, 150) : (logged > 0 ? 100 : 0);
+    return {
+      key:       issue.key,
+      summary:   f.summary || '',
+      type:      f.issuetype?.name || 'Unknown',
+      typeIcon:  f.issuetype?.iconUrl || '',
+      assignee:  f.assignee?.displayName || 'Unassigned',
+      avatarUrl: f.assignee?.avatarUrls?.['24x24'] || null,
+      status:    f.status?.name || '',
+      statusCat: f.status?.statusCategory?.key || 'new',
+      dept:      getDeptValue(issue),
+      estimate:  est,
+      logged,
+      remaining: rem,
+      pct,
+      over:      est > 0 && logged > est,
+      maxLogged,
+      url:       `${S.config ? S.config.url : ''}/browse/${issue.key}`,
+    };
+  });
+
+  populateTableFilters(S.tableRows);
+  sortAndRenderTable();
 }
 
 // ═══════════════════════════════════════════════════════
@@ -1219,9 +1422,30 @@ function showLoading() {
   document.getElementById('dashboardContent').style.display = 'none';
 }
 function showDashboard() {
-  document.getElementById('emptyState').style.display    = 'none';
-  document.getElementById('loadingState').style.display  = 'none';
+  document.getElementById('emptyState').style.display       = 'none';
+  document.getElementById('loadingState').style.display     = 'none';
   document.getElementById('dashboardContent').style.display = '';
+  document.getElementById('dateBar').style.display          = '';
+}
+
+function renderAllWithDateFilter() {
+  // Set default 30-day filter on first load; preserve existing filter on refresh
+  if (!S.dateFrom && !S.dateTo) {
+    const today = new Date();
+    const from  = new Date(today);
+    from.setDate(today.getDate() - 29);
+    const fmt = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+    S.dateFrom = fmt(from);
+    S.dateTo   = fmt(today);
+    document.getElementById('dateFrom').value = S.dateFrom;
+    document.getElementById('dateTo').value   = S.dateTo;
+    // Mark "30 days" preset as active
+    document.querySelectorAll('.preset-btn').forEach(b => {
+      b.classList.toggle('active', b.textContent.trim() === '30 days');
+    });
+  }
+  showDashboard();
+  applyDateFilter();
 }
 function setLoadingMsg(msg) {
   document.getElementById('loadingMsg').textContent = msg;
@@ -1371,15 +1595,7 @@ async function loadDashboard() {
     // Process
     S.processed = processData(S.issues, S.worklogs, S.sprintInfo);
 
-    // Render
-    renderCards(S.processed);
-    renderAssigneeChart(S.processed);
-    renderDailyChart(S.processed);
-    renderTypeChart(S.processed);
-    renderDeptChart(S.processed);
-    renderTable(S.issues, S.worklogs, S.processed);
-
-    showDashboard();
+    renderAllWithDateFilter();
     const now = new Date().toLocaleTimeString();
     setHeaderStatus(`Updated ${now}`);
   } catch (err) {
@@ -1511,14 +1727,11 @@ function loadDashboardFromJson() {
   S.issues.forEach(issue => { S.worklogs[issue.key] = issue.worklogs || []; });
 
   S.processed = processData(S.issues, S.worklogs, sprint);
-  renderCards(S.processed);
-  renderAssigneeChart(S.processed);
-  renderDailyChart(S.processed);
-  renderTypeChart(S.processed);
-  renderDeptChart(S.processed);
-  renderTable(S.issues, S.worklogs, S.processed);
   updateSprintBadge(sprint);
-  showDashboard();
+  // Reset date filter when switching sprints so the new window is shown correctly
+  S.dateFrom = null;
+  S.dateTo   = null;
+  renderAllWithDateFilter();
 
   const fetched = new Date(S.jsonData.fetchedAt);
   setHeaderStatus(`Data refreshed ${fetched.toLocaleTimeString()}`);

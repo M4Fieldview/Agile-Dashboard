@@ -40,7 +40,7 @@ ISSUE_FIELDS = ','.join([
 ])
 
 # How far back to look for worklogs in non-sprint (kanban/project) boards
-RECENT_DAYS = 60
+RECENT_DAYS = 90
 
 # ── HTTP helpers ─────────────────────────────────────────────────────────────
 def get(path, params=None):
