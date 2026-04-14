@@ -532,6 +532,9 @@
   </div>
 </div>
 
+<!-- hidden sprint select kept for API mode compatibility -->
+<select id="sprintSelect" onchange="onSprintChange()" style="display:none"></select>
+
 <!-- ══════════════════════ SPRINT BAR ══════════════════════ -->
 <div class="sprint-bar">
   <div class="sprint-bar-group">
@@ -540,13 +543,6 @@
       <option value="">— connect first —</option>
     </select>
   </div>
-  <div class="sprint-bar-group">
-    <label>Sprint</label>
-    <select id="sprintSelect" onchange="onSprintChange()" disabled>
-      <option value="">— select board —</option>
-    </select>
-  </div>
-  <div id="sprintBadge"></div>
   <div id="modeBadge" style="display:none;background:#E3FCEF;border:1px solid #ABF5D1;border-radius:4px;padding:3px 10px;font-size:12px;color:#006644;"></div>
   <div class="sprint-bar-spacer"></div>
   <div class="refresh-row">
@@ -1570,7 +1566,7 @@ async function onBoardChange() {
   S.boardId = document.getElementById('boardSelect').value;
   if (!S.boardId) return;
   if (S.mode === 'json') {
-    populateSprintsFromJson(S.boardId);
+    loadBoardFromJson(S.boardId);
   } else {
     await populateSprints(S.boardId);
   }
@@ -1797,46 +1793,44 @@ function activateJsonMode(jsonData) {
   if (defaultBoard) {
     S.boardId = String(defaultBoard.id);
     boardSel.value = S.boardId;
-    populateSprintsFromJson(S.boardId);
+    loadBoardFromJson(S.boardId);
   }
 }
 
-function populateSprintsFromJson(boardId) {
+function combineAllSprintIssues(board) {
+  // Merge issues across all sprint windows, deduplicating by key and merging worklogs
+  const issueMap = {};
+  (board.sprints || []).forEach(sprint => {
+    (sprint.issues || []).forEach(issue => {
+      if (!issueMap[issue.key]) {
+        issueMap[issue.key] = { ...issue, worklogs: [] };
+      }
+      // Merge worklogs, dedup by started+author
+      const seen = new Set(
+        issueMap[issue.key].worklogs.map(w => `${w.started}|${w.author?.displayName}`)
+      );
+      (issue.worklogs || []).forEach(wl => {
+        const k = `${wl.started}|${wl.author?.displayName}`;
+        if (!seen.has(k)) { issueMap[issue.key].worklogs.push(wl); seen.add(k); }
+      });
+    });
+  });
+  return Object.values(issueMap);
+}
+
+function loadBoardFromJson(boardId) {
   const board = (S.jsonData.boards || []).find(b => String(b.id) === String(boardId));
   if (!board) return;
 
-  const sprintSel = document.getElementById('sprintSelect');
-  sprintSel.innerHTML = (board.sprints || [])
-    .map(s => `<option value="${s.id}">${s.name} (${s.state})</option>`).join('');
-  sprintSel.disabled = false;
-
-  // Auto-select active sprint, else first
-  const active = (board.sprints || []).find(s => s.state === 'active');
-  if (active) sprintSel.value = active.id;
-  if (sprintSel.value) loadDashboardFromJson();
-}
-
-function loadDashboardFromJson() {
-  const boardId  = document.getElementById('boardSelect').value;
-  const sprintId = document.getElementById('sprintSelect').value;
-  if (!boardId || !sprintId) return;
-
-  const board  = (S.jsonData.boards || []).find(b => String(b.id) === String(boardId));
-  if (!board) return;
-  const sprint = (board.sprints || []).find(s => String(s.id) === String(sprintId));
-  if (!sprint) return;
-
   clearError();
-  S.sprintInfo = sprint;
-  S.issues     = sprint.issues || [];
-  S.worklogs   = {};
+  S.issues   = combineAllSprintIssues(board);
+  S.worklogs = {};
   S.issues.forEach(issue => { S.worklogs[issue.key] = issue.worklogs || []; });
+  S.sprintInfo = { name: board.name, state: 'active' };
 
-  S.processed = processData(S.issues, S.worklogs, sprint);
-  updateSprintBadge(sprint);
-  // Reset date filter when switching sprints so the new window is shown correctly
-  S.dateFrom = null;
-  S.dateTo   = null;
+  S.processed = processData(S.issues, S.worklogs, S.sprintInfo);
+  S.dateFrom  = null;
+  S.dateTo    = null;
   renderAllWithDateFilter();
 
   const fetched = new Date(S.jsonData.fetchedAt);
