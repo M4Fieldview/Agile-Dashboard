@@ -33,14 +33,24 @@ if not all([JIRA_URL, JIRA_EMAIL, JIRA_TOKEN]):
 
 _AUTH = 'Basic ' + base64.b64encode(f'{JIRA_EMAIL}:{JIRA_TOKEN}'.encode()).decode()
 
-ISSUE_FIELDS = ','.join([
-    'summary', 'assignee', 'issuetype', 'status', 'components',
-    'timespent', 'timeoriginalestimate', 'timeestimate',
-    'priority', 'customfield_10016',
-])
-
 # How far back to look for worklogs in non-sprint (kanban/project) boards
 RECENT_DAYS = 90
+
+# Discovered at runtime — set in main() before any issue fetching
+SUPPORTED_DEPT_FIELD = None   # e.g. 'customfield_10042'
+
+def _base_issue_fields():
+    fields = [
+        'summary', 'assignee', 'issuetype', 'status', 'components',
+        'timespent', 'timeoriginalestimate', 'timeestimate',
+        'priority', 'customfield_10016',
+    ]
+    if SUPPORTED_DEPT_FIELD:
+        fields.append(SUPPORTED_DEPT_FIELD)
+    return ','.join(fields)
+
+# Will be set after field discovery
+ISSUE_FIELDS = _base_issue_fields()
 
 # ── HTTP helpers ─────────────────────────────────────────────────────────────
 def get(path, params=None):
@@ -83,6 +93,32 @@ def get_all(path, extra=None, item_key=None):
     return results
 
 
+# ── Field discovery ───────────────────────────────────────────────────────────
+def discover_supported_dept_field():
+    """Return the Jira field ID whose name is 'Supported Department', or None."""
+    try:
+        fields = get('/rest/api/3/field')
+        for f in fields:
+            if f.get('name', '').lower() == 'supported department':
+                print(f'  Found "Supported Department" → {f["id"]}', file=sys.stderr)
+                return f['id']
+        print('  "Supported Department" field not found — skipping.', file=sys.stderr)
+    except Exception as e:
+        print(f'  Warning: could not discover fields: {e}', file=sys.stderr)
+    return None
+
+
+def extract_dept_value(raw):
+    """Normalise a Jira custom field value to a plain string (or list of strings)."""
+    if raw is None:
+        return None
+    if isinstance(raw, list):
+        return [extract_dept_value(v) for v in raw if v is not None]
+    if isinstance(raw, dict):
+        return raw.get('value') or raw.get('name') or raw.get('displayName') or str(raw)
+    return str(raw)
+
+
 # ── Data slimming ─────────────────────────────────────────────────────────────
 def slim_issue(issue):
     f          = issue.get('fields', {})
@@ -112,6 +148,7 @@ def slim_issue(issue):
                 'statusCategory': {'key': status_cat.get('key', 'new')},
             },
             'components': [{'name': c['name']} for c in f.get('components', [])],
+            'supportedDept': extract_dept_value(f.get(SUPPORTED_DEPT_FIELD)) if SUPPORTED_DEPT_FIELD else None,
         },
         'worklogs': slim_worklogs(issue.get('worklogs', [])),
     }
@@ -377,6 +414,14 @@ def build_time_windows(total_days, window_days=14):
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 def main():
+    global SUPPORTED_DEPT_FIELD, ISSUE_FIELDS
+
+    # ── Discover custom fields ───────────────────────────────────────────────
+    print('=== Discovering custom fields ===', file=sys.stderr)
+    SUPPORTED_DEPT_FIELD = discover_supported_dept_field()
+    ISSUE_FIELDS = _base_issue_fields()
+    print(f'ISSUE_FIELDS: {ISSUE_FIELDS}', file=sys.stderr)
+
     # ── Pass 1: Agile boards ─────────────────────────────────────────────────
     print('=== Pass 1: Agile boards ===', file=sys.stderr)
     all_boards = get_all('/rest/agile/1.0/board')

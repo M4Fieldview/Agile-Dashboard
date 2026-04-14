@@ -947,7 +947,13 @@ function processData(issues, worklogs, sprint) {
 }
 
 function getDeptValue(issue) {
-  const field = S.config.deptField || 'components';
+  // Prefer the fetched Supported Department field
+  const sd = issue.fields?.supportedDept;
+  if (sd !== undefined && sd !== null) {
+    if (Array.isArray(sd)) return sd.filter(Boolean).join(', ');
+    return String(sd);
+  }
+  const field = S.config?.deptField || 'components';
   if (field === 'components') {
     return (issue.fields.components || []).map(c => c.name).join(', ') || '';
   }
@@ -959,7 +965,13 @@ function getDeptValue(issue) {
 }
 
 function getDeptValues(issue) {
-  const field = S.config.deptField || 'components';
+  // Prefer the fetched Supported Department field
+  const sd = issue.fields?.supportedDept;
+  if (sd !== undefined && sd !== null) {
+    if (Array.isArray(sd)) return sd.filter(Boolean).map(String);
+    return [String(sd)].filter(Boolean);
+  }
+  const field = S.config?.deptField || 'components';
   if (field === 'components') {
     return (issue.fields.components || []).map(c => c.name);
   }
@@ -1250,9 +1262,7 @@ function renderDeptChart(d) {
     return;
   }
   document.getElementById('deptChartCard').style.display = '';
-  const fieldLabel = (S.config.deptField || 'components') === 'components'
-    ? 'Component' : S.config.deptField;
-  document.getElementById('deptChartTitle').textContent = `Hours by ${fieldLabel}`;
+  document.getElementById('deptChartTitle').textContent = 'Hours by Supported Department';
   const labels = sorted.map(([t]) => t);
   const values = sorted.map(([, s]) => +(secToHours(s).toFixed(1)));
   const ctx = document.getElementById('chartDept').getContext('2d');
