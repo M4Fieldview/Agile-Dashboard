@@ -226,34 +226,32 @@ def process_scrum_board(board_id, board_name, board_type):
 def process_kanban_board(board_id, board_name, board_type):
     """
     Kanban boards have no sprints.
-    Fetch all board issues directly via the board/issue endpoint,
-    attach worklogs, then bucket into rolling 2-week windows.
+    Fetch recently-updated board issues, attach worklogs, then bucket
+    into rolling 2-week windows by worklog date.
+    The board is always emitted (even if empty) so it appears in the UI.
     """
     cutoff = (datetime.now(timezone.utc) - timedelta(days=RECENT_DAYS)).strftime('%Y-%m-%d')
-    print(f'  Fetching kanban issues (worklogDate >= {cutoff})…', file=sys.stderr)
+    # Use 'updated' not 'worklogDate' — catches issues even if no worklogs logged yet
+    print(f'  Fetching kanban issues (updated >= {cutoff})…', file=sys.stderr)
 
     try:
-        # Use the board's own issue endpoint — no JQL boardProjects() needed
         issues = get_all(
             f'/rest/agile/1.0/board/{board_id}/issue',
             {
-                'jql':    f'worklogDate >= "{cutoff}"',
+                'jql':    f'updated >= "{cutoff}"',
                 'fields': ISSUE_FIELDS,
             },
             item_key='issues',
         )
     except Exception as e:
         print(f'  Error fetching kanban issues: {e}', file=sys.stderr)
-        return None
+        # Still emit the board with an empty window so it shows in the UI
+        return _empty_board(board_id, board_name, board_type)
 
-    if not issues:
-        print('  No issues with recent worklogs — skipping.', file=sys.stderr)
-        return None
-
-    print(f'  {len(issues)} issues — attaching worklogs…', file=sys.stderr)
+    print(f'  {len(issues)} recently updated issues — attaching worklogs…', file=sys.stderr)
     attach_worklogs(issues)
 
-    # Bucket into rolling 2-week windows
+    # Bucket into rolling 2-week windows by worklog start date
     windows = build_time_windows(RECENT_DAYS)
     output_sprints = []
     for label, start_d, end_d in windows:
@@ -264,23 +262,37 @@ def process_kanban_board(board_id, board_name, board_type):
                 for wl in (i.get('worklogs') or [])
             )
         ]
-        if window_issues:
-            output_sprints.append({
-                'id':        f'{board_id}_{start_d}',
-                'name':      label,
-                'state':     'active' if label == windows[0][0] else 'closed',
-                'startDate': start_d + 'T00:00:00.000Z',
-                'endDate':   end_d   + 'T23:59:59.000Z',
-                'goal':      '',
-                'issues':    window_issues,
-            })
+        # Include window even if empty so the full date range is browsable
+        output_sprints.append({
+            'id':        f'{board_id}_{start_d}',
+            'name':      label,
+            'state':     'active' if label == windows[0][0] else 'closed',
+            'startDate': start_d + 'T00:00:00.000Z',
+            'endDate':   end_d   + 'T23:59:59.000Z',
+            'goal':      '',
+            'issues':    window_issues,
+        })
 
-    if not output_sprints:
-        print('  No worklogs fell within any time window — skipping.', file=sys.stderr)
-        return None
-
-    print(f'  {len(output_sprints)} time window(s) with data.', file=sys.stderr)
+    with_data = sum(1 for s in output_sprints if s['issues'])
+    print(f'  {len(output_sprints)} windows ({with_data} with worklog data).', file=sys.stderr)
     return {'id': board_id, 'name': board_name, 'type': board_type, 'sprints': output_sprints}
+
+
+def _empty_board(board_id, board_name, board_type):
+    """Return a board entry with a single empty window (board visible in UI, no data)."""
+    windows = build_time_windows(RECENT_DAYS)
+    label, start_d, end_d = windows[0]
+    return {
+        'id':   board_id,
+        'name': board_name,
+        'type': board_type,
+        'sprints': [{
+            'id': f'{board_id}_{start_d}', 'name': label, 'state': 'active',
+            'startDate': start_d + 'T00:00:00.000Z',
+            'endDate':   end_d   + 'T23:59:59.000Z',
+            'goal': '', 'issues': [],
+        }],
+    }
 
 
 # ── Project-based fetch (team-managed / next-gen projects) ───────────────────
@@ -368,6 +380,10 @@ def main():
     print('=== Pass 1: Agile boards ===', file=sys.stderr)
     all_boards = get_all('/rest/agile/1.0/board')
     print(f'Found {len(all_boards)} board(s) via Agile API', file=sys.stderr)
+    for b in all_boards:
+        loc = b.get('location') or {}
+        print(f'  [{b.get("type","?")}] id={b["id"]} name="{b["name"]}" '
+              f'project={loc.get("projectKey","?")}', file=sys.stderr)
 
     output_boards = []
     seen_project_keys = set()
