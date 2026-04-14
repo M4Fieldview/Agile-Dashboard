@@ -1687,9 +1687,15 @@ function activateJsonMode(jsonData) {
   badge.textContent = `⚡ Auto-refreshed · ${fetched.toLocaleTimeString()}`;
   badge.style.display = '';
 
-  // Auto-select first board and its active sprint
-  if (S.boards.length > 0) {
-    S.boardId = String(S.boards[0].id);
+  // Auto-select first board that has worklog data, else first board
+  const firstWithData = (jsonData.boards || []).find(b =>
+    (b.sprints || []).some(s =>
+      (s.issues || []).some(i => (i.worklogs || []).length > 0)
+    )
+  );
+  const defaultBoard = firstWithData || (jsonData.boards || [])[0];
+  if (defaultBoard) {
+    S.boardId = String(defaultBoard.id);
     boardSel.value = S.boardId;
     populateSprintsFromJson(S.boardId);
   }
