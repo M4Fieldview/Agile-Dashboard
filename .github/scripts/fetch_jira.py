@@ -37,7 +37,8 @@ _AUTH = 'Basic ' + base64.b64encode(f'{JIRA_EMAIL}:{JIRA_TOKEN}'.encode()).decod
 RECENT_DAYS = 90
 
 # Discovered at runtime — set in main() before any issue fetching
-SUPPORTED_DEPT_FIELD = None   # e.g. 'customfield_10042'
+SUPPORTED_DEPT_FIELD  = None   # e.g. 'customfield_10042'
+PROJECT_NUMBER_FIELD  = None   # e.g. 'customfield_10050'
 
 def _base_issue_fields():
     fields = [
@@ -47,6 +48,8 @@ def _base_issue_fields():
     ]
     if SUPPORTED_DEPT_FIELD:
         fields.append(SUPPORTED_DEPT_FIELD)
+    if PROJECT_NUMBER_FIELD:
+        fields.append(PROJECT_NUMBER_FIELD)
     return ','.join(fields)
 
 # Will be set after field discovery
@@ -94,17 +97,23 @@ def get_all(path, extra=None, item_key=None):
 
 
 # ── Field discovery ───────────────────────────────────────────────────────────
-def discover_supported_dept_field():
-    """Return the Jira field ID whose name is 'Supported Department', or None."""
+def discover_fields():
+    """Return a dict mapping lowercase field names to their IDs."""
     try:
-        fields = get('/rest/api/3/field')
-        for f in fields:
-            if f.get('name', '').lower() == 'supported department':
-                print(f'  Found "Supported Department" → {f["id"]}', file=sys.stderr)
-                return f['id']
-        print('  "Supported Department" field not found — skipping.', file=sys.stderr)
+        return {f['name'].lower(): f['id'] for f in get('/rest/api/3/field')}
     except Exception as e:
         print(f'  Warning: could not discover fields: {e}', file=sys.stderr)
+        return {}
+
+
+def find_field(field_map, *names):
+    """Return the first matching field ID (case-insensitive) or None."""
+    for name in names:
+        fid = field_map.get(name.lower())
+        if fid:
+            print(f'  Found "{name}" → {fid}', file=sys.stderr)
+            return fid
+    print(f'  None of {names} found — skipping.', file=sys.stderr)
     return None
 
 
@@ -147,8 +156,9 @@ def slim_issue(issue):
                 'name': status.get('name', ''),
                 'statusCategory': {'key': status_cat.get('key', 'new')},
             },
-            'components': [{'name': c['name']} for c in f.get('components', [])],
+            'components':    [{'name': c['name']} for c in f.get('components', [])],
             'supportedDept': extract_dept_value(f.get(SUPPORTED_DEPT_FIELD)) if SUPPORTED_DEPT_FIELD else None,
+            'projectNumber': extract_dept_value(f.get(PROJECT_NUMBER_FIELD))  if PROJECT_NUMBER_FIELD  else None,
         },
         'worklogs': slim_worklogs(issue.get('worklogs', [])),
     }
@@ -414,11 +424,13 @@ def build_time_windows(total_days, window_days=14):
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 def main():
-    global SUPPORTED_DEPT_FIELD, ISSUE_FIELDS
+    global SUPPORTED_DEPT_FIELD, PROJECT_NUMBER_FIELD, ISSUE_FIELDS
 
     # ── Discover custom fields ───────────────────────────────────────────────
     print('=== Discovering custom fields ===', file=sys.stderr)
-    SUPPORTED_DEPT_FIELD = discover_supported_dept_field()
+    field_map = discover_fields()
+    SUPPORTED_DEPT_FIELD = find_field(field_map, 'Supported Department')
+    PROJECT_NUMBER_FIELD = find_field(field_map, 'Project Number', 'Project #', 'Project No')
     ISSUE_FIELDS = _base_issue_fields()
     print(f'ISSUE_FIELDS: {ISSUE_FIELDS}', file=sys.stderr)
 

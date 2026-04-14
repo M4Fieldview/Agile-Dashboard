@@ -675,7 +675,8 @@
               <th onclick="sortTable('type')">Type</th>
               <th onclick="sortTable('assignee')">Assignee</th>
               <th onclick="sortTable('status')">Status</th>
-              <th onclick="sortTable('dept')">Component</th>
+              <th onclick="sortTable('dept')">Department</th>
+              <th onclick="sortTable('projectNumber')">Project #</th>
               <th onclick="sortTable('estimate')" title="Original estimate">Estimate</th>
               <th onclick="sortTable('logged')" title="Time spent">Logged</th>
               <th onclick="sortTable('remaining')" title="Remaining estimate">Remaining</th>
@@ -1110,7 +1111,8 @@ function renderTableFiltered(filtered) {
       avatarUrl: f.assignee?.avatarUrls?.['24x24'] || null,
       status:    f.status?.name || '',
       statusCat: f.status?.statusCategory?.key || 'new',
-      dept:      getDeptValue(issue),
+      dept:          getDeptValue(issue),
+      projectNumber: issue.fields?.projectNumber != null ? String(issue.fields.projectNumber) : '',
       estimate:  est,
       logged,
       remaining: rem,
@@ -1366,7 +1368,7 @@ function sortTable(col) {
   document.querySelectorAll('#issuesTable thead th').forEach(th => {
     th.classList.remove('sort-asc', 'sort-desc');
   });
-  const cols = ['key','summary','type','assignee','status','dept','estimate','logged','remaining',''];
+  const cols = ['key','summary','type','assignee','status','dept','projectNumber','estimate','logged','remaining',''];
   const idx = cols.indexOf(S.sortCol);
   if (idx >= 0) {
     const th = document.querySelectorAll('#issuesTable thead th')[idx];
@@ -1398,7 +1400,7 @@ function sortAndRenderTable() {
 
   const tbody = document.getElementById('issuesTableBody');
   if (rows.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;padding:24px;color:var(--muted)">No issues match filter</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="11" style="text-align:center;padding:24px;color:var(--muted)">No issues match filter</td></tr>';
     return;
   }
 
@@ -1416,6 +1418,7 @@ function sortAndRenderTable() {
         <td><div class="assignee-cell">${avatarHtml}<span>${r.assignee}</span></div></td>
         <td><span class="status-chip" style="${statusStyle(r.statusCat)}">${r.status}</span></td>
         <td><span style="font-size:12px;color:var(--muted)">${r.dept || '—'}</span></td>
+        <td><span style="font-size:12px;color:var(--muted)">${r.projectNumber || '—'}</span></td>
         <td><span class="time-val">${r.estimate > 0 ? fmtSecs(r.estimate) : '—'}</span></td>
         <td><span class="time-val" style="color:${r.logged > 0 ? 'var(--text)' : 'var(--muted)'}">${r.logged > 0 ? fmtSecs(r.logged) : '—'}</span></td>
         <td><span class="time-val" style="color:var(--muted)">${r.remaining > 0 ? fmtSecs(r.remaining) : '—'}</span></td>
