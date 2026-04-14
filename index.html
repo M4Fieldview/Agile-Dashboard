@@ -495,14 +495,27 @@
       <span class="settings-hint">Jira field key for department grouping. Use <em>components</em> for built-in components.</span>
     </div>
 
+    <div class="settings-group">
+      <label>GitHub Token <span style="font-weight:400;text-transform:none">(live refresh)</span></label>
+      <input id="cfgGhToken" type="password" placeholder="ghp_…" />
+      <span class="settings-hint">
+        PAT with <code>repo</code> scope — stored locally only.
+        <a href="https://github.com/settings/tokens/new?scopes=repo" target="_blank" style="color:var(--blue)">Create token ↗</a>
+      </span>
+    </div>
+
+    <div class="settings-group">
+      <label>GitHub Repo</label>
+      <input id="cfgGhRepo" type="text" placeholder="owner/repo" />
+      <span class="settings-hint">e.g. M4Fieldview/Agile-Dashboard</span>
+    </div>
+
     <div class="settings-note" id="settingsNote" style="display:none"></div>
 
     <div class="settings-note" style="background:#DEEBFF;border-color:#B3D4FF;color:#0747A6;grid-column:1/-1">
-      <strong>GitHub Actions mode (recommended for hosted use):</strong>
-      Add three secrets to your repo under <em>Settings → Secrets and variables → Actions</em>:<br>
-      <code>JIRA_URL</code> &nbsp;·&nbsp; <code>JIRA_EMAIL</code> &nbsp;·&nbsp; <code>JIRA_TOKEN</code><br>
-      Then trigger the <strong>Refresh Jira Data</strong> workflow manually from the <em>Actions</em> tab.
-      After that, data refreshes automatically every 15 minutes — no CORS issues.
+      <strong>Live refresh:</strong> Enter your GitHub Token + Repo above and the dashboard will automatically
+      fetch fresh Jira data every time you load the page (via GitHub Actions — no CORS issues).<br>
+      The data also auto-refreshes every 15 minutes in the background via GitHub Actions.
     </div>
 
     <div class="settings-actions">
@@ -736,6 +749,8 @@ function saveConfig() {
     email:     document.getElementById('cfgEmail').value.trim(),
     token:     document.getElementById('cfgToken').value.trim(),
     deptField: document.getElementById('cfgDeptField').value.trim() || 'components',
+    ghToken:   document.getElementById('cfgGhToken').value.trim(),
+    ghRepo:    document.getElementById('cfgGhRepo').value.trim(),
   };
   localStorage.setItem('agile_dash_cfg', JSON.stringify(S.config));
 }
@@ -746,12 +761,14 @@ function populateConfigFields() {
   document.getElementById('cfgEmail').value     = S.config.email     || '';
   document.getElementById('cfgToken').value     = S.config.token     || '';
   document.getElementById('cfgDeptField').value = S.config.deptField || '';
+  document.getElementById('cfgGhToken').value   = S.config.ghToken   || '';
+  document.getElementById('cfgGhRepo').value    = S.config.ghRepo    || '';
 }
 
 function clearConfig() {
   localStorage.removeItem('agile_dash_cfg');
   S.config = null;
-  ['cfgUrl','cfgEmail','cfgToken','cfgDeptField'].forEach(id => document.getElementById(id).value = '');
+  ['cfgUrl','cfgEmail','cfgToken','cfgDeptField','cfgGhToken','cfgGhRepo'].forEach(id => document.getElementById(id).value = '');
   showNote('Config cleared.', 'info');
 }
 
@@ -1607,6 +1624,22 @@ async function loadDashboard() {
 }
 
 async function refreshDashboard() {
+  if (S.mode === 'json' && S.config?.ghToken && S.config?.ghRepo) {
+    document.getElementById('refreshBtn').disabled = true;
+    const success = await triggerAndWaitForWorkflow();
+    if (success) {
+      const freshData = await tryLoadDataJson();
+      if (freshData?.boards?.length) {
+        activateJsonMode(freshData);
+        const fetched = new Date(freshData.fetchedAt);
+        setHeaderStatus(`✓ Live · ${fetched.toLocaleTimeString()}`);
+      }
+    } else {
+      setHeaderStatus('⚠ Refresh timed out — showing cached data');
+    }
+    document.getElementById('refreshBtn').disabled = false;
+    return;
+  }
   await loadDashboard();
   resetAutoRefreshCountdown();
 }
@@ -1657,6 +1690,73 @@ function updateCountdownLabel(secs) {
   const m = Math.floor(secs / 60), s = secs % 60;
   document.getElementById('nextRefresh').textContent =
     `next refresh in ${m}:${String(s).padStart(2, '0')}`;
+}
+
+// ═══════════════════════════════════════════════════════
+//  GITHUB ACTIONS  live refresh via workflow_dispatch
+// ═══════════════════════════════════════════════════════
+async function triggerAndWaitForWorkflow() {
+  const ghToken = S.config?.ghToken;
+  const ghRepo  = S.config?.ghRepo || 'M4Fieldview/Agile-Dashboard';
+  if (!ghToken || !ghRepo || !ghRepo.includes('/')) return false;
+
+  const [owner, repoName] = ghRepo.split('/');
+  const headers = {
+    'Authorization': `token ${ghToken}`,
+    'Accept': 'application/vnd.github.v3+json',
+  };
+
+  setHeaderStatus('⟳ Triggering live refresh…');
+  const triggerTime = new Date();
+
+  try {
+    const dispatchResp = await fetch(
+      `https://api.github.com/repos/${owner}/${repoName}/actions/workflows/fetch-jira-data.yml/dispatches`,
+      {
+        method: 'POST',
+        headers: { ...headers, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ref: 'main' }),
+      }
+    );
+    if (!dispatchResp.ok) {
+      console.warn('Workflow dispatch failed:', dispatchResp.status, await dispatchResp.text());
+      return false;
+    }
+  } catch (e) {
+    console.warn('Workflow dispatch error:', e);
+    return false;
+  }
+
+  // Wait for GitHub to register the run, then poll for completion
+  const TIMEOUT_MS = 5 * 60 * 1000;
+  const start = Date.now();
+  await new Promise(r => setTimeout(r, 6000));
+
+  while (Date.now() - start < TIMEOUT_MS) {
+    try {
+      const resp = await fetch(
+        `https://api.github.com/repos/${owner}/${repoName}/actions/runs?event=workflow_dispatch&per_page=10`,
+        { headers }
+      );
+      if (resp.ok) {
+        const data = await resp.json();
+        const run = (data.workflow_runs || []).find(r => new Date(r.created_at) >= triggerTime);
+        const elapsed = Math.round((Date.now() - start) / 1000);
+        if (run) {
+          if (run.status === 'completed') return run.conclusion === 'success';
+          setHeaderStatus(`⟳ Fetching live data… ${elapsed}s`);
+        } else {
+          setHeaderStatus(`⟳ Starting workflow… ${elapsed}s`);
+        }
+      }
+    } catch (e) {
+      console.warn('Polling error:', e);
+    }
+    await new Promise(r => setTimeout(r, 8000));
+  }
+
+  console.warn('Workflow timed out after 5 minutes');
+  return false;
 }
 
 // ═══════════════════════════════════════════════════════
@@ -1750,7 +1850,31 @@ function loadDashboardFromJson() {
   loadConfig();
   if (S.config) populateConfigFields();
 
-  // Try GitHub Actions pre-fetched data first (no CORS needed)
+  // If GitHub token + repo are configured, trigger a live workflow run on every page load
+  if (S.config?.ghToken && S.config?.ghRepo) {
+    // Show cached data immediately so the page isn't blank while waiting
+    const cachedData = await tryLoadDataJson();
+    if (cachedData?.boards?.length) activateJsonMode(cachedData);
+
+    // Trigger fresh run and swap in new data when ready
+    document.getElementById('refreshBtn').disabled = true;
+    const success = await triggerAndWaitForWorkflow();
+    document.getElementById('refreshBtn').disabled = false;
+
+    if (success) {
+      const freshData = await tryLoadDataJson();
+      if (freshData?.boards?.length) {
+        activateJsonMode(freshData);
+        const fetched = new Date(freshData.fetchedAt);
+        setHeaderStatus(`✓ Live · ${fetched.toLocaleTimeString()}`);
+      }
+    } else if (cachedData?.boards?.length) {
+      setHeaderStatus('⚠ Refresh timed out — showing cached data');
+    }
+    return;
+  }
+
+  // No GitHub token — fall back to cached data.json
   const jsonData = await tryLoadDataJson();
   if (jsonData && Array.isArray(jsonData.boards) && jsonData.boards.length > 0) {
     activateJsonMode(jsonData);
