@@ -1,0 +1,1444 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Agile Time Tracking Dashboard</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --blue:    #0052CC;
+      --blue-lt: #2684FF;
+      --bg:      #F4F5F7;
+      --card:    #FFFFFF;
+      --border:  #DFE1E6;
+      --text:    #172B4D;
+      --muted:   #5E6C84;
+      --green:   #36B37E;
+      --orange:  #FF8B00;
+      --red:     #DE350B;
+      --purple:  #6554C0;
+      --teal:    #00B8D9;
+      --radius:  6px;
+      --shadow:  0 1px 3px rgba(0,0,0,.12), 0 1px 2px rgba(0,0,0,.08);
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      font-size: 14px;
+      min-height: 100vh;
+    }
+
+    /* ── HEADER ── */
+    .header {
+      background: var(--blue);
+      color: #fff;
+      padding: 0 20px;
+      height: 52px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      box-shadow: 0 2px 6px rgba(0,0,0,.25);
+    }
+    .header-left { display: flex; align-items: center; gap: 10px; }
+    .header-left h1 { font-size: 16px; font-weight: 600; letter-spacing: .02em; }
+    .header-right { display: flex; align-items: center; gap: 10px; }
+    .header-status { font-size: 12px; opacity: .75; }
+
+    .btn {
+      cursor: pointer;
+      border: none;
+      border-radius: var(--radius);
+      padding: 6px 12px;
+      font-size: 13px;
+      font-weight: 500;
+      line-height: 1;
+      transition: background .15s, opacity .15s;
+    }
+    .btn-ghost {
+      background: rgba(255,255,255,.15);
+      color: #fff;
+    }
+    .btn-ghost:hover { background: rgba(255,255,255,.25); }
+    .btn-primary { background: var(--blue); color: #fff; }
+    .btn-primary:hover { background: #0747A6; }
+    .btn-sm { padding: 5px 10px; font-size: 12px; }
+    .btn:disabled { opacity: .5; cursor: not-allowed; }
+
+    /* ── SETTINGS PANEL ── */
+    #settingsPanel {
+      background: #fff;
+      border-bottom: 1px solid var(--border);
+      overflow: hidden;
+      max-height: 0;
+      transition: max-height .3s ease;
+    }
+    #settingsPanel.open { max-height: 1000px; }
+    .settings-inner {
+      padding: 20px;
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+      gap: 16px;
+      align-items: end;
+    }
+    .settings-group { display: flex; flex-direction: column; gap: 5px; }
+    .settings-group label { font-size: 12px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+    .settings-group input,
+    .settings-group select {
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 7px 10px;
+      font-size: 13px;
+      color: var(--text);
+      background: #fff;
+      width: 100%;
+      outline: none;
+      transition: border-color .15s;
+    }
+    .settings-group input:focus,
+    .settings-group select:focus { border-color: var(--blue-lt); box-shadow: 0 0 0 2px rgba(38,132,255,.2); }
+    .settings-group input[type="password"] { letter-spacing: .1em; }
+    .settings-hint { font-size: 11px; color: var(--muted); margin-top: 2px; }
+    .settings-actions {
+      display: flex;
+      gap: 8px;
+      align-items: flex-end;
+      padding-bottom: 1px;
+    }
+    .settings-actions .btn { background: var(--blue); color: #fff; }
+    .settings-actions .btn:hover { background: #0747A6; }
+    .settings-note {
+      grid-column: 1 / -1;
+      background: #FFFAE6;
+      border: 1px solid #FFE380;
+      border-radius: var(--radius);
+      padding: 10px 14px;
+      font-size: 12px;
+      color: #5E4C00;
+      line-height: 1.5;
+    }
+
+    /* ── SPRINT BAR ── */
+    .sprint-bar {
+      background: var(--card);
+      border-bottom: 1px solid var(--border);
+      padding: 10px 20px;
+      display: flex;
+      align-items: center;
+      gap: 20px;
+      flex-wrap: wrap;
+    }
+    .sprint-bar-group { display: flex; align-items: center; gap: 7px; }
+    .sprint-bar-group label { font-size: 12px; font-weight: 600; color: var(--muted); white-space: nowrap; }
+    .sprint-bar-group select {
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 5px 8px;
+      font-size: 13px;
+      color: var(--text);
+      background: #fff;
+      outline: none;
+      cursor: pointer;
+      min-width: 160px;
+    }
+    .sprint-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: var(--bg);
+      border-radius: 20px;
+      padding: 4px 12px;
+      font-size: 12px;
+    }
+    .badge-dot {
+      width: 7px; height: 7px;
+      border-radius: 50%;
+      background: var(--green);
+      flex-shrink: 0;
+    }
+    .badge-dot.closed { background: var(--muted); }
+    .sprint-bar-spacer { flex: 1; }
+    .refresh-row { display: flex; align-items: center; gap: 8px; }
+    .auto-refresh-label { font-size: 12px; color: var(--muted); display: flex; align-items: center; gap: 5px; cursor: pointer; }
+    .auto-refresh-label input { cursor: pointer; }
+
+    /* ── MAIN LAYOUT ── */
+    #main { padding: 20px; max-width: 1400px; margin: 0 auto; }
+
+    /* ── EMPTY / LOADING / ERROR STATES ── */
+    .state-box {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      padding: 60px 20px;
+      color: var(--muted);
+      text-align: center;
+    }
+    .state-box svg { opacity: .35; }
+    .state-box p { font-size: 15px; }
+    .state-box small { font-size: 13px; }
+
+    .spinner {
+      width: 32px; height: 32px;
+      border: 3px solid var(--border);
+      border-top-color: var(--blue);
+      border-radius: 50%;
+      animation: spin .7s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .error-box {
+      background: #FFEBE6;
+      border: 1px solid #FFBDAD;
+      border-radius: var(--radius);
+      padding: 14px 16px;
+      color: var(--red);
+      margin-bottom: 16px;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    /* ── SUMMARY CARDS ── */
+    .cards-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+      gap: 14px;
+      margin-bottom: 20px;
+    }
+    .card {
+      background: var(--card);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      padding: 18px 20px;
+    }
+    .card-label {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: .05em;
+      margin-bottom: 8px;
+    }
+    .card-value {
+      font-size: 28px;
+      font-weight: 700;
+      color: var(--text);
+      line-height: 1;
+    }
+    .card-sub {
+      font-size: 12px;
+      color: var(--muted);
+      margin-top: 5px;
+    }
+    .card-accent { border-top: 3px solid var(--blue); }
+    .card-accent.green { border-top-color: var(--green); }
+    .card-accent.orange { border-top-color: var(--orange); }
+    .card-accent.purple { border-top-color: var(--purple); }
+
+    /* ── CHARTS ── */
+    .charts-row {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
+      gap: 14px;
+      margin-bottom: 20px;
+    }
+    .chart-card {
+      background: var(--card);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      padding: 18px 20px;
+    }
+    .chart-card h3 {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: .04em;
+      margin-bottom: 14px;
+    }
+    .chart-wrap { position: relative; }
+    .chart-wrap.tall { height: 260px; }
+    .chart-wrap.medium { height: 220px; }
+
+    /* ── TABLE ── */
+    .table-card {
+      background: var(--card);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      overflow: hidden;
+      margin-bottom: 20px;
+    }
+    .table-header {
+      padding: 14px 20px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    .table-header h3 {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: .04em;
+    }
+    .table-filters { display: flex; align-items: center; gap: 10px; }
+    .table-filters input {
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 5px 10px;
+      font-size: 13px;
+      outline: none;
+      width: 200px;
+    }
+    .table-filters select {
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 5px 8px;
+      font-size: 13px;
+      outline: none;
+    }
+    .table-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    thead th {
+      background: var(--bg);
+      padding: 9px 14px;
+      text-align: left;
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: .04em;
+      white-space: nowrap;
+      cursor: pointer;
+      user-select: none;
+      border-bottom: 1px solid var(--border);
+    }
+    thead th:hover { background: #EBECF0; }
+    thead th.sort-asc::after  { content: ' ▲'; font-size: 9px; }
+    thead th.sort-desc::after { content: ' ▼'; font-size: 9px; }
+    tbody tr { border-bottom: 1px solid var(--border); transition: background .1s; }
+    tbody tr:last-child { border-bottom: none; }
+    tbody tr:hover { background: #FAFBFC; }
+    tbody td { padding: 9px 14px; vertical-align: middle; }
+    .issue-key {
+      font-family: monospace;
+      font-size: 12px;
+      color: var(--blue);
+      text-decoration: none;
+      white-space: nowrap;
+    }
+    .issue-key:hover { text-decoration: underline; }
+    .issue-summary { max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .type-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      background: var(--bg);
+      border-radius: 3px;
+      padding: 2px 7px;
+      font-size: 11px;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+    .assignee-cell { display: flex; align-items: center; gap: 7px; white-space: nowrap; }
+    .avatar {
+      width: 24px; height: 24px;
+      border-radius: 50%;
+      background: var(--blue-lt);
+      color: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 10px;
+      font-weight: 700;
+      flex-shrink: 0;
+      overflow: hidden;
+    }
+    .avatar img { width: 100%; height: 100%; object-fit: cover; }
+    .time-bar-cell { min-width: 140px; }
+    .time-bar-wrap { display: flex; align-items: center; gap: 7px; }
+    .time-bar-bg {
+      flex: 1;
+      height: 6px;
+      background: var(--border);
+      border-radius: 3px;
+      overflow: hidden;
+    }
+    .time-bar-fill {
+      height: 100%;
+      border-radius: 3px;
+      background: var(--blue-lt);
+      transition: width .3s;
+    }
+    .time-bar-fill.over { background: var(--red); }
+    .time-val { font-size: 12px; white-space: nowrap; font-weight: 500; }
+    .status-chip {
+      display: inline-block;
+      border-radius: 3px;
+      padding: 2px 7px;
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .03em;
+    }
+
+    /* ── FOOTER ── */
+    .footer {
+      text-align: center;
+      padding: 16px;
+      font-size: 11px;
+      color: var(--muted);
+    }
+  </style>
+</head>
+<body>
+
+<!-- ══════════════════════ HEADER ══════════════════════ -->
+<header class="header">
+  <div class="header-left">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+      <rect x="2" y="2" width="9" height="9" rx="2" fill="rgba(255,255,255,.9)"/>
+      <rect x="13" y="2" width="9" height="9" rx="2" fill="rgba(255,255,255,.6)"/>
+      <rect x="2" y="13" width="9" height="9" rx="2" fill="rgba(255,255,255,.6)"/>
+      <rect x="13" y="13" width="9" height="9" rx="2" fill="rgba(255,255,255,.3)"/>
+    </svg>
+    <h1>Agile Time Tracking Dashboard</h1>
+  </div>
+  <div class="header-right">
+    <span id="headerStatus" class="header-status"></span>
+    <button class="btn btn-ghost btn-sm" id="refreshBtn" onclick="refreshDashboard()" title="Refresh data">
+      ↻ Refresh
+    </button>
+    <button class="btn btn-ghost btn-sm" onclick="toggleSettings()" title="Settings">
+      ⚙ Settings
+    </button>
+  </div>
+</header>
+
+<!-- ══════════════════════ SETTINGS PANEL ══════════════════════ -->
+<div id="settingsPanel">
+  <div class="settings-inner">
+
+    <div class="settings-group">
+      <label>Jira Cloud URL</label>
+      <input id="cfgUrl" type="url" placeholder="https://yourcompany.atlassian.net" />
+      <span class="settings-hint">No trailing slash</span>
+    </div>
+
+    <div class="settings-group">
+      <label>Email</label>
+      <input id="cfgEmail" type="email" placeholder="you@company.com" />
+    </div>
+
+    <div class="settings-group">
+      <label>API Token</label>
+      <input id="cfgToken" type="password" placeholder="Your Jira API token" />
+      <span class="settings-hint">
+        Create at <a href="https://id.atlassian.com/manage-profile/security/api-tokens" target="_blank" style="color:var(--blue)">id.atlassian.com → API tokens</a>
+      </span>
+    </div>
+
+    <div class="settings-group">
+      <label>Department Field <span style="font-weight:400;text-transform:none">(optional)</span></label>
+      <input id="cfgDeptField" type="text" placeholder="e.g. customfield_10050 or components" />
+      <span class="settings-hint">Jira field key for department grouping. Use <em>components</em> for built-in components.</span>
+    </div>
+
+    <div class="settings-note" id="settingsNote" style="display:none"></div>
+
+    <div class="settings-actions">
+      <button class="btn" id="connectBtn" onclick="connectJira()">Connect</button>
+      <button class="btn btn-ghost btn-sm" style="background:var(--bg);color:var(--text);" onclick="clearConfig()">Clear saved</button>
+    </div>
+
+    <div class="settings-note">
+      <strong>CORS note:</strong> This dashboard calls the Jira Cloud REST API directly from your browser.
+      If requests are blocked, install the <em>Allow CORS: Access-Control-Allow-Origin</em> browser extension,
+      or run a lightweight proxy such as <code>npx local-cors-proxy --proxyUrl https://yourcompany.atlassian.net</code>.
+    </div>
+
+  </div>
+</div>
+
+<!-- ══════════════════════ SPRINT BAR ══════════════════════ -->
+<div class="sprint-bar">
+  <div class="sprint-bar-group">
+    <label>Board</label>
+    <select id="boardSelect" onchange="onBoardChange()" disabled>
+      <option value="">— connect first —</option>
+    </select>
+  </div>
+  <div class="sprint-bar-group">
+    <label>Sprint</label>
+    <select id="sprintSelect" onchange="onSprintChange()" disabled>
+      <option value="">— select board —</option>
+    </select>
+  </div>
+  <div id="sprintBadge"></div>
+  <div class="sprint-bar-spacer"></div>
+  <div class="refresh-row">
+    <label class="auto-refresh-label">
+      <input type="checkbox" id="autoRefresh" onchange="toggleAutoRefresh()" />
+      Auto-refresh (5 min)
+    </label>
+    <span id="nextRefresh" style="font-size:12px;color:var(--muted);"></span>
+  </div>
+</div>
+
+<!-- ══════════════════════ MAIN ══════════════════════ -->
+<main id="main">
+
+  <div id="errorBox" class="error-box" style="display:none"></div>
+
+  <!-- EMPTY STATE -->
+  <div id="emptyState" class="state-box">
+    <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+      <path d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+    </svg>
+    <p>No data yet</p>
+    <small>Open Settings ⚙, connect to Jira, then select a board and sprint.</small>
+  </div>
+
+  <!-- LOADING STATE -->
+  <div id="loadingState" class="state-box" style="display:none">
+    <div class="spinner"></div>
+    <p id="loadingMsg">Loading sprint data…</p>
+  </div>
+
+  <!-- DASHBOARD CONTENT -->
+  <div id="dashboardContent" style="display:none">
+
+    <!-- Summary Cards -->
+    <div class="cards-grid">
+      <div class="card card-accent">
+        <div class="card-label">Total Hours Logged</div>
+        <div class="card-value" id="cardHours">—</div>
+        <div class="card-sub" id="cardHoursSub"></div>
+      </div>
+      <div class="card card-accent green">
+        <div class="card-label">Team Members</div>
+        <div class="card-value" id="cardMembers">—</div>
+        <div class="card-sub" id="cardMembersSub"></div>
+      </div>
+      <div class="card card-accent orange">
+        <div class="card-label">Issues Tracked</div>
+        <div class="card-value" id="cardIssues">—</div>
+        <div class="card-sub" id="cardIssuesSub"></div>
+      </div>
+      <div class="card card-accent purple">
+        <div class="card-label">Estimate Accuracy</div>
+        <div class="card-value" id="cardEstimate">—</div>
+        <div class="card-sub" id="cardEstimateSub"></div>
+      </div>
+    </div>
+
+    <!-- Charts Row 1 -->
+    <div class="charts-row">
+      <div class="chart-card">
+        <h3>Hours by Team Member</h3>
+        <div class="chart-wrap tall">
+          <canvas id="chartAssignee"></canvas>
+        </div>
+      </div>
+      <div class="chart-card">
+        <h3>Daily Logging Trend</h3>
+        <div class="chart-wrap tall">
+          <canvas id="chartDaily"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <!-- Charts Row 2 -->
+    <div class="charts-row">
+      <div class="chart-card">
+        <h3>Hours by Issue Type</h3>
+        <div class="chart-wrap medium">
+          <canvas id="chartType"></canvas>
+        </div>
+      </div>
+      <div class="chart-card" id="deptChartCard">
+        <h3 id="deptChartTitle">Hours by Department / Component</h3>
+        <div class="chart-wrap medium">
+          <canvas id="chartDept"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <!-- Issues Table -->
+    <div class="table-card">
+      <div class="table-header">
+        <h3>Sprint Issues — Worklog Detail</h3>
+        <div class="table-filters">
+          <input type="text" id="tableSearch" placeholder="Search issues…" oninput="filterTable()" />
+          <select id="tableFilterType" onchange="filterTable()">
+            <option value="">All Types</option>
+          </select>
+          <select id="tableFilterAssignee" onchange="filterTable()">
+            <option value="">All Assignees</option>
+          </select>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table id="issuesTable">
+          <thead>
+            <tr>
+              <th onclick="sortTable('key')">Key</th>
+              <th onclick="sortTable('summary')">Summary</th>
+              <th onclick="sortTable('type')">Type</th>
+              <th onclick="sortTable('assignee')">Assignee</th>
+              <th onclick="sortTable('status')">Status</th>
+              <th onclick="sortTable('dept')">Component</th>
+              <th onclick="sortTable('estimate')" title="Original estimate">Estimate</th>
+              <th onclick="sortTable('logged')" title="Time spent">Logged</th>
+              <th onclick="sortTable('remaining')" title="Remaining estimate">Remaining</th>
+              <th>Progress</th>
+            </tr>
+          </thead>
+          <tbody id="issuesTableBody"></tbody>
+        </table>
+      </div>
+    </div>
+
+  </div><!-- /dashboardContent -->
+</main>
+
+<footer class="footer">
+  Agile Time Tracking Dashboard — data sourced live from Jira Cloud
+</footer>
+
+<script>
+// ═══════════════════════════════════════════════════════
+//  STATE
+// ═══════════════════════════════════════════════════════
+const S = {
+  config: null,         // { url, email, token, deptField }
+  boards: [],
+  sprints: [],
+  boardId: null,
+  sprintId: null,
+  issues: [],
+  worklogs: {},         // { issueKey: [ worklog, ... ] }
+  sprintInfo: null,
+  processed: null,      // aggregated data
+  sortCol: 'logged',
+  sortDir: 'desc',
+  tableRows: [],        // all rows (pre-filter)
+  autoTimer: null,
+  autoCountdown: null,
+  charts: {},
+};
+
+// ═══════════════════════════════════════════════════════
+//  CHART PALETTE
+// ═══════════════════════════════════════════════════════
+const PALETTE = [
+  '#2684FF','#57D9A3','#FF8B00','#FF5630',
+  '#8777D9','#00B8D9','#36B37E','#6554C0',
+  '#FFAB00','#00C7E6','#ABF5D1','#C0B6F2',
+];
+
+// ═══════════════════════════════════════════════════════
+//  CONFIG  (localStorage — token stored locally only)
+// ═══════════════════════════════════════════════════════
+function loadConfig() {
+  try {
+    const raw = localStorage.getItem('agile_dash_cfg');
+    if (raw) S.config = JSON.parse(raw);
+  } catch(_) { S.config = null; }
+}
+
+function saveConfig() {
+  S.config = {
+    url:       document.getElementById('cfgUrl').value.replace(/\/$/, '').trim(),
+    email:     document.getElementById('cfgEmail').value.trim(),
+    token:     document.getElementById('cfgToken').value.trim(),
+    deptField: document.getElementById('cfgDeptField').value.trim() || 'components',
+  };
+  localStorage.setItem('agile_dash_cfg', JSON.stringify(S.config));
+}
+
+function populateConfigFields() {
+  if (!S.config) return;
+  document.getElementById('cfgUrl').value       = S.config.url       || '';
+  document.getElementById('cfgEmail').value     = S.config.email     || '';
+  document.getElementById('cfgToken').value     = S.config.token     || '';
+  document.getElementById('cfgDeptField').value = S.config.deptField || '';
+}
+
+function clearConfig() {
+  localStorage.removeItem('agile_dash_cfg');
+  S.config = null;
+  ['cfgUrl','cfgEmail','cfgToken','cfgDeptField'].forEach(id => document.getElementById(id).value = '');
+  showNote('Config cleared.', 'info');
+}
+
+// ═══════════════════════════════════════════════════════
+//  JIRA API
+// ═══════════════════════════════════════════════════════
+function authHeader() {
+  const creds = btoa(`${S.config.email}:${S.config.token}`);
+  return { 'Authorization': `Basic ${creds}`, 'Accept': 'application/json' };
+}
+
+async function jiraFetch(path, params = {}) {
+  const url = new URL(`${S.config.url}${path}`);
+  Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
+  const res = await fetch(url.toString(), { headers: authHeader() });
+  if (!res.ok) {
+    const txt = await res.text().catch(() => '');
+    throw new Error(`Jira ${res.status}: ${res.statusText}. ${txt.slice(0, 200)}`);
+  }
+  return res.json();
+}
+
+// Paginated fetch (Jira REST v3 style, uses startAt/maxResults)
+async function jiraFetchAll(path, itemsKey, extraParams = {}) {
+  let results = [], startAt = 0, total = null;
+  while (total === null || results.length < total) {
+    const data = await jiraFetch(path, { ...extraParams, startAt, maxResults: 100 });
+    const items = data[itemsKey] || data.values || data.issues || [];
+    results = results.concat(items);
+    total = data.total ?? data.maxResults ?? items.length;
+    startAt += items.length;
+    if (items.length === 0) break;
+    if (startAt >= (data.total ?? items.length)) break;
+  }
+  return results;
+}
+
+async function loadBoards() {
+  // Fetch all board types (scrum + kanban) so teams using either workflow are supported
+  const data = await jiraFetch('/rest/agile/1.0/board', { maxResults: 50 });
+  return data.values || [];
+}
+
+async function loadSprints(boardId) {
+  // load active + recently closed
+  const [active, closed] = await Promise.all([
+    jiraFetch('/rest/agile/1.0/board/' + boardId + '/sprint', { state: 'active', maxResults: 5 }),
+    jiraFetch('/rest/agile/1.0/board/' + boardId + '/sprint', { state: 'closed', maxResults: 10 }),
+  ]);
+  const future = await jiraFetch('/rest/agile/1.0/board/' + boardId + '/sprint', { state: 'future', maxResults: 3 }).catch(() => ({ values: [] }));
+  return [
+    ...(future.values || []),
+    ...(active.values || []),
+    ...(closed.values || []).reverse(),
+  ];
+}
+
+async function loadSprintIssues(sprintId) {
+  const fields = [
+    'summary', 'assignee', 'issuetype', 'status', 'components',
+    'timespent', 'timeoriginalestimate', 'timeestimate',
+    'priority', 'customfield_10016', // story points
+  ];
+  if (S.config.deptField && S.config.deptField !== 'components') {
+    fields.push(S.config.deptField);
+  }
+  return jiraFetchAll(
+    `/rest/agile/1.0/sprint/${sprintId}/issue`,
+    'issues',
+    { fields: fields.join(','), maxResults: 100 }
+  );
+}
+
+// Batch worklog fetches with concurrency limit
+async function loadAllWorklogs(issues) {
+  const CONCURRENCY = 6;
+  const result = {};
+  for (let i = 0; i < issues.length; i += CONCURRENCY) {
+    setLoadingMsg(`Loading worklogs… (${Math.min(i + CONCURRENCY, issues.length)} / ${issues.length})`);
+    const batch = issues.slice(i, i + CONCURRENCY);
+    const data = await Promise.all(
+      batch.map(async issue => {
+        try {
+          const wl = await jiraFetch(`/rest/api/3/issue/${issue.key}/worklog`);
+          return { key: issue.key, logs: wl.worklogs || [] };
+        } catch (_) {
+          return { key: issue.key, logs: [] };
+        }
+      })
+    );
+    data.forEach(d => { result[d.key] = d.logs; });
+  }
+  return result;
+}
+
+// ═══════════════════════════════════════════════════════
+//  DATA PROCESSING
+// ═══════════════════════════════════════════════════════
+function secToHours(s) { return Math.round((s || 0) / 360) / 10; }
+function fmtHours(h)   { return h === 0 ? '0h' : h >= 1 ? `${Math.round(h)}h` : `${Math.round(h * 60)}m`; }
+function fmtSecs(s)    { return fmtHours(secToHours(s)); }
+
+function processData(issues, worklogs, sprint) {
+  const sprintStart = sprint.startDate ? new Date(sprint.startDate) : null;
+  const sprintEnd   = sprint.endDate   ? new Date(sprint.endDate)   : null;
+
+  // Flatten all worklog entries (optionally filtered to sprint window)
+  const allEntries = [];
+  issues.forEach(issue => {
+    const logs = worklogs[issue.key] || [];
+    logs.forEach(log => {
+      const started = new Date(log.started);
+      // Include all logs; note if outside sprint
+      allEntries.push({
+        issueKey:   issue.key,
+        issueSummary: issue.fields.summary,
+        issueType:  issue.fields.issuetype?.name || 'Unknown',
+        assignee:   log.author?.displayName || 'Unassigned',
+        assigneeAvatarUrl: log.author?.avatarUrls?.['24x24'] || null,
+        assigneeEmail: log.author?.emailAddress || '',
+        started,
+        dateKey:    started.toISOString().slice(0, 10),
+        seconds:    log.timeSpentSeconds || 0,
+        components: (issue.fields.components || []).map(c => c.name),
+        deptField:  getDeptValue(issue),
+        status:     issue.fields.status?.name || '',
+        statusCat:  issue.fields.status?.statusCategory?.key || '',
+        estimate:   issue.fields.timeoriginalestimate || 0,
+        remaining:  issue.fields.timeestimate || 0,
+        timespent:  issue.fields.timespent || 0,
+      });
+    });
+  });
+
+  // By assignee
+  const byAssignee = {};
+  allEntries.forEach(e => {
+    if (!byAssignee[e.assignee]) byAssignee[e.assignee] = { seconds: 0, avatarUrl: e.assigneeAvatarUrl };
+    byAssignee[e.assignee].seconds += e.seconds;
+  });
+
+  // By issue type
+  const byType = {};
+  issues.forEach(issue => {
+    const type = issue.fields.issuetype?.name || 'Unknown';
+    const spent = issue.fields.timespent || 0;
+    byType[type] = (byType[type] || 0) + spent;
+  });
+
+  // By department/component
+  const byDept = {};
+  issues.forEach(issue => {
+    const depts = getDeptValues(issue);
+    const spent = issue.fields.timespent || 0;
+    if (depts.length === 0) {
+      byDept['(none)'] = (byDept['(none)'] || 0) + spent;
+    } else {
+      depts.forEach(d => { byDept[d] = (byDept[d] || 0) + spent; });
+    }
+  });
+
+  // By day (for sprint window, or last 30 days)
+  const byDay = {};
+  allEntries.forEach(e => {
+    byDay[e.dateKey] = (byDay[e.dateKey] || 0) + e.seconds;
+  });
+
+  // Totals
+  const totalSeconds   = allEntries.reduce((s, e) => s + e.seconds, 0);
+  const totalEstimate  = issues.reduce((s, i) => s + (i.fields.timeoriginalestimate || 0), 0);
+  const members        = new Set(allEntries.map(e => e.assignee)).size;
+  const withTime       = issues.filter(i => (i.fields.timespent || 0) > 0).length;
+
+  return {
+    allEntries, byAssignee, byType, byDept, byDay,
+    totalSeconds, totalEstimate, members, withTime,
+    totalIssues: issues.length,
+    sprint,
+  };
+}
+
+function getDeptValue(issue) {
+  const field = S.config.deptField || 'components';
+  if (field === 'components') {
+    return (issue.fields.components || []).map(c => c.name).join(', ') || '';
+  }
+  const val = issue.fields[field];
+  if (!val) return '';
+  if (Array.isArray(val)) return val.map(v => v.name || v.value || String(v)).join(', ');
+  if (typeof val === 'object') return val.name || val.value || JSON.stringify(val);
+  return String(val);
+}
+
+function getDeptValues(issue) {
+  const field = S.config.deptField || 'components';
+  if (field === 'components') {
+    return (issue.fields.components || []).map(c => c.name);
+  }
+  const val = issue.fields[field];
+  if (!val) return [];
+  if (Array.isArray(val)) return val.map(v => v.name || v.value || String(v));
+  if (typeof val === 'object') return [val.name || val.value || JSON.stringify(val)];
+  return [String(val)];
+}
+
+// ═══════════════════════════════════════════════════════
+//  RENDERING
+// ═══════════════════════════════════════════════════════
+function renderCards(d) {
+  const hours = secToHours(d.totalSeconds);
+  const estH  = secToHours(d.totalEstimate);
+  const pct   = estH > 0 ? Math.round((hours / estH) * 100) : null;
+
+  document.getElementById('cardHours').textContent    = fmtHours(hours);
+  document.getElementById('cardHoursSub').textContent = estH > 0 ? `of ${fmtHours(estH)} estimated` : 'no estimates set';
+
+  document.getElementById('cardMembers').textContent    = d.members;
+  document.getElementById('cardMembersSub').textContent = `contributor${d.members !== 1 ? 's' : ''} this sprint`;
+
+  document.getElementById('cardIssues').textContent    = `${d.withTime} / ${d.totalIssues}`;
+  document.getElementById('cardIssuesSub').textContent = 'issues with logged time';
+
+  document.getElementById('cardEstimate').textContent  = pct !== null ? `${pct}%` : '—';
+  document.getElementById('cardEstimateSub').textContent = pct !== null
+    ? (pct > 100 ? 'over estimate' : pct > 90 ? 'near capacity' : 'within estimate')
+    : 'no estimates set';
+}
+
+function destroyChart(id) {
+  if (S.charts[id]) { S.charts[id].destroy(); delete S.charts[id]; }
+}
+
+function renderAssigneeChart(d) {
+  destroyChart('assignee');
+  const sorted = Object.entries(d.byAssignee)
+    .sort((a, b) => b[1].seconds - a[1].seconds)
+    .slice(0, 12);
+  const labels = sorted.map(([name]) => name);
+  const values = sorted.map(([, v]) => +(secToHours(v.seconds).toFixed(1)));
+  const ctx = document.getElementById('chartAssignee').getContext('2d');
+  S.charts.assignee = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [{ data: values, backgroundColor: PALETTE, borderRadius: 4, borderSkipped: false }],
+    },
+    options: {
+      indexAxis: 'y',
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: { callbacks: { label: ctx => ` ${ctx.raw}h` } },
+      },
+      scales: {
+        x: { beginAtZero: true, ticks: { callback: v => `${v}h` }, grid: { color: '#F0F0F0' } },
+        y: { grid: { display: false }, ticks: { font: { size: 12 } } },
+      },
+    },
+  });
+}
+
+function renderDailyChart(d) {
+  destroyChart('daily');
+  // Build sorted day list
+  const days = Object.keys(d.byDay).sort();
+  if (days.length === 0) return;
+  const labels = days.map(day => {
+    const dt = new Date(day + 'T12:00:00');
+    return dt.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  });
+  const values = days.map(day => +(secToHours(d.byDay[day]).toFixed(1)));
+  const ctx = document.getElementById('chartDaily').getContext('2d');
+  S.charts.daily = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [{
+        data: values,
+        borderColor: '#2684FF',
+        backgroundColor: 'rgba(38,132,255,.12)',
+        borderWidth: 2.5,
+        fill: true,
+        tension: 0.35,
+        pointRadius: 4,
+        pointHoverRadius: 6,
+        pointBackgroundColor: '#2684FF',
+      }],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: { callbacks: { label: ctx => ` ${ctx.raw}h logged` } },
+      },
+      scales: {
+        x: { grid: { display: false }, ticks: { maxRotation: 45, font: { size: 11 } } },
+        y: { beginAtZero: true, ticks: { callback: v => `${v}h` }, grid: { color: '#F0F0F0' } },
+      },
+    },
+  });
+}
+
+function renderTypeChart(d) {
+  destroyChart('type');
+  const sorted = Object.entries(d.byType)
+    .filter(([, s]) => s > 0)
+    .sort((a, b) => b[1] - a[1]);
+  if (sorted.length === 0) return;
+  const labels = sorted.map(([t]) => t);
+  const values = sorted.map(([, s]) => +(secToHours(s).toFixed(1)));
+  const ctx = document.getElementById('chartType').getContext('2d');
+  S.charts.type = new Chart(ctx, {
+    type: 'doughnut',
+    data: {
+      labels,
+      datasets: [{ data: values, backgroundColor: PALETTE, borderWidth: 2, hoverOffset: 6 }],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      cutout: '55%',
+      plugins: {
+        legend: { position: 'right', labels: { font: { size: 12 }, boxWidth: 12, padding: 12 } },
+        tooltip: { callbacks: { label: ctx => ` ${ctx.label}: ${ctx.raw}h` } },
+      },
+    },
+  });
+}
+
+function renderDeptChart(d) {
+  destroyChart('dept');
+  const sorted = Object.entries(d.byDept)
+    .filter(([, s]) => s > 0)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 10);
+  if (sorted.length === 0) {
+    document.getElementById('deptChartCard').style.display = 'none';
+    return;
+  }
+  document.getElementById('deptChartCard').style.display = '';
+  const fieldLabel = (S.config.deptField || 'components') === 'components'
+    ? 'Component' : S.config.deptField;
+  document.getElementById('deptChartTitle').textContent = `Hours by ${fieldLabel}`;
+  const labels = sorted.map(([t]) => t);
+  const values = sorted.map(([, s]) => +(secToHours(s).toFixed(1)));
+  const ctx = document.getElementById('chartDept').getContext('2d');
+  S.charts.dept = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [{ data: values, backgroundColor: PALETTE, borderRadius: 4, borderSkipped: false }],
+    },
+    options: {
+      indexAxis: 'y',
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: { callbacks: { label: ctx => ` ${ctx.raw}h` } },
+      },
+      scales: {
+        x: { beginAtZero: true, ticks: { callback: v => `${v}h` }, grid: { color: '#F0F0F0' } },
+        y: { grid: { display: false }, ticks: { font: { size: 12 } } },
+      },
+    },
+  });
+}
+
+// ── TABLE ──────────────────────────────────────────────
+const STATUS_COLORS = {
+  'indeterminate': { bg: '#DEEBFF', color: '#0747A6' },
+  'new':           { bg: '#F4F5F7', color: '#5E6C84' },
+  'done':          { bg: '#E3FCEF', color: '#006644' },
+};
+
+function statusStyle(catKey) {
+  const s = STATUS_COLORS[catKey] || STATUS_COLORS.new;
+  return `background:${s.bg};color:${s.color}`;
+}
+
+function renderTable(issues, worklogs, d) {
+  // Build per-issue rows
+  const maxLogged = Math.max(...issues.map(i => i.fields.timespent || 0), 1);
+
+  S.tableRows = issues.map(issue => {
+    const f   = issue.fields;
+    const logged = f.timespent || 0;
+    const est    = f.timeoriginalestimate || 0;
+    const rem    = f.timeestimate || 0;
+    const pct    = est > 0 ? Math.min((logged / est) * 100, 150) : (logged > 0 ? 100 : 0);
+    const over   = est > 0 && logged > est;
+    const dept   = getDeptValue(issue);
+
+    return {
+      key:       issue.key,
+      summary:   f.summary || '',
+      type:      f.issuetype?.name || 'Unknown',
+      typeIcon:  f.issuetype?.iconUrl || '',
+      assignee:  f.assignee?.displayName || 'Unassigned',
+      avatarUrl: f.assignee?.avatarUrls?.['24x24'] || null,
+      status:    f.status?.name || '',
+      statusCat: f.status?.statusCategory?.key || 'new',
+      dept,
+      estimate:  est,
+      logged,
+      remaining: rem,
+      pct,
+      over,
+      maxLogged,
+      url: `${S.config.url}/browse/${issue.key}`,
+    };
+  });
+
+  // Populate filter dropdowns
+  populateTableFilters(S.tableRows);
+  sortAndRenderTable();
+}
+
+function populateTableFilters(rows) {
+  const types     = [...new Set(rows.map(r => r.type))].sort();
+  const assignees = [...new Set(rows.map(r => r.assignee))].sort();
+
+  const typeEl = document.getElementById('tableFilterType');
+  typeEl.innerHTML = '<option value="">All Types</option>' +
+    types.map(t => `<option value="${t}">${t}</option>`).join('');
+
+  const assigneeEl = document.getElementById('tableFilterAssignee');
+  assigneeEl.innerHTML = '<option value="">All Assignees</option>' +
+    assignees.map(a => `<option value="${a}">${a}</option>`).join('');
+}
+
+function filterTable() {
+  sortAndRenderTable();
+}
+
+function sortTable(col) {
+  if (S.sortCol === col) {
+    S.sortDir = S.sortDir === 'asc' ? 'desc' : 'asc';
+  } else {
+    S.sortCol = col;
+    S.sortDir = ['logged', 'estimate', 'remaining'].includes(col) ? 'desc' : 'asc';
+  }
+  // Update header classes
+  document.querySelectorAll('#issuesTable thead th').forEach(th => {
+    th.classList.remove('sort-asc', 'sort-desc');
+  });
+  const cols = ['key','summary','type','assignee','status','dept','estimate','logged','remaining',''];
+  const idx = cols.indexOf(S.sortCol);
+  if (idx >= 0) {
+    const th = document.querySelectorAll('#issuesTable thead th')[idx];
+    if (th) th.classList.add(S.sortDir === 'asc' ? 'sort-asc' : 'sort-desc');
+  }
+  sortAndRenderTable();
+}
+
+function sortAndRenderTable() {
+  const search   = document.getElementById('tableSearch').value.toLowerCase();
+  const typeF    = document.getElementById('tableFilterType').value;
+  const assigneeF = document.getElementById('tableFilterAssignee').value;
+
+  let rows = S.tableRows.filter(r => {
+    if (typeF     && r.type     !== typeF)     return false;
+    if (assigneeF && r.assignee !== assigneeF) return false;
+    if (search && !r.key.toLowerCase().includes(search) && !r.summary.toLowerCase().includes(search)) return false;
+    return true;
+  });
+
+  rows = rows.sort((a, b) => {
+    let va = a[S.sortCol], vb = b[S.sortCol];
+    if (typeof va === 'string') va = va.toLowerCase();
+    if (typeof vb === 'string') vb = vb.toLowerCase();
+    if (va < vb) return S.sortDir === 'asc' ? -1 : 1;
+    if (va > vb) return S.sortDir === 'asc' ?  1 : -1;
+    return 0;
+  });
+
+  const tbody = document.getElementById('issuesTableBody');
+  if (rows.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="10" style="text-align:center;padding:24px;color:var(--muted)">No issues match filter</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = rows.map(r => {
+    const barPct = Math.min(r.pct, 100);
+    const barClass = r.over ? 'time-bar-fill over' : 'time-bar-fill';
+    const avatarHtml = r.avatarUrl
+      ? `<div class="avatar"><img src="${r.avatarUrl}" alt="" loading="lazy"/></div>`
+      : `<div class="avatar">${r.assignee.charAt(0).toUpperCase()}</div>`;
+    return `
+      <tr>
+        <td><a class="issue-key" href="${r.url}" target="_blank">${r.key}</a></td>
+        <td><div class="issue-summary" title="${r.summary}">${r.summary}</div></td>
+        <td><span class="type-badge">${r.typeIcon ? `<img src="${r.typeIcon}" width="12" height="12" alt="" />` : ''}${r.type}</span></td>
+        <td><div class="assignee-cell">${avatarHtml}<span>${r.assignee}</span></div></td>
+        <td><span class="status-chip" style="${statusStyle(r.statusCat)}">${r.status}</span></td>
+        <td><span style="font-size:12px;color:var(--muted)">${r.dept || '—'}</span></td>
+        <td><span class="time-val">${r.estimate > 0 ? fmtSecs(r.estimate) : '—'}</span></td>
+        <td><span class="time-val" style="color:${r.logged > 0 ? 'var(--text)' : 'var(--muted)'}">${r.logged > 0 ? fmtSecs(r.logged) : '—'}</span></td>
+        <td><span class="time-val" style="color:var(--muted)">${r.remaining > 0 ? fmtSecs(r.remaining) : '—'}</span></td>
+        <td class="time-bar-cell">
+          <div class="time-bar-wrap">
+            <div class="time-bar-bg">
+              <div class="${barClass}" style="width:${barPct}%"></div>
+            </div>
+            <span style="font-size:11px;color:var(--muted);min-width:30px;text-align:right">${r.estimate > 0 ? Math.round(r.pct) + '%' : ''}</span>
+          </div>
+        </td>
+      </tr>`;
+  }).join('');
+}
+
+// ═══════════════════════════════════════════════════════
+//  UI HELPERS
+// ═══════════════════════════════════════════════════════
+function showEmpty()   {
+  document.getElementById('emptyState').style.display    = '';
+  document.getElementById('loadingState').style.display  = 'none';
+  document.getElementById('dashboardContent').style.display = 'none';
+}
+function showLoading() {
+  document.getElementById('emptyState').style.display    = 'none';
+  document.getElementById('loadingState').style.display  = '';
+  document.getElementById('dashboardContent').style.display = 'none';
+}
+function showDashboard() {
+  document.getElementById('emptyState').style.display    = 'none';
+  document.getElementById('loadingState').style.display  = 'none';
+  document.getElementById('dashboardContent').style.display = '';
+}
+function setLoadingMsg(msg) {
+  document.getElementById('loadingMsg').textContent = msg;
+}
+function setHeaderStatus(msg) {
+  document.getElementById('headerStatus').textContent = msg;
+}
+function showError(msg) {
+  const el = document.getElementById('errorBox');
+  el.textContent = msg;
+  el.style.display = msg ? '' : 'none';
+}
+function clearError() { showError(''); }
+
+function showNote(msg, type = 'info') {
+  const el = document.getElementById('settingsNote');
+  el.style.display = msg ? '' : 'none';
+  el.textContent = msg;
+  el.style.background = type === 'error' ? '#FFEBE6' : '#E3FCEF';
+  el.style.borderColor = type === 'error' ? '#FFBDAD' : '#ABF5D1';
+  el.style.color       = type === 'error' ? '#DE350B' : '#006644';
+}
+
+function toggleSettings() {
+  const panel = document.getElementById('settingsPanel');
+  panel.classList.toggle('open');
+}
+
+function updateSprintBadge(sprint) {
+  if (!sprint) { document.getElementById('sprintBadge').innerHTML = ''; return; }
+  const state = sprint.state || 'unknown';
+  const dotClass = state === 'active' ? 'badge-dot' : 'badge-dot closed';
+  const dates = sprint.startDate
+    ? `${new Date(sprint.startDate).toLocaleDateString()} – ${new Date(sprint.endDate || sprint.startDate).toLocaleDateString()}`
+    : '';
+  document.getElementById('sprintBadge').innerHTML =
+    `<span class="sprint-badge"><span class="${dotClass}"></span><strong>${sprint.name}</strong>${dates ? ' · ' + dates : ''} · <em>${state}</em></span>`;
+}
+
+// ═══════════════════════════════════════════════════════
+//  BOARD / SPRINT SELECTORS
+// ═══════════════════════════════════════════════════════
+async function connectJira() {
+  clearError();
+  saveConfig();
+  if (!S.config.url || !S.config.email || !S.config.token) {
+    showNote('Please fill in Jira URL, email, and API token.', 'error');
+    return;
+  }
+  const btn = document.getElementById('connectBtn');
+  btn.disabled = true;
+  btn.textContent = 'Connecting…';
+  showNote('Connecting to Jira…');
+  try {
+    S.boards = await loadBoards();
+    const boardSel = document.getElementById('boardSelect');
+    boardSel.innerHTML = S.boards.length
+      ? S.boards.map(b => `<option value="${b.id}">${b.name} (${b.type})</option>`).join('')
+      : '<option value="">No boards found</option>';
+    boardSel.disabled = S.boards.length === 0;
+    if (S.boards.length === 0) {
+      showNote('Connected but no boards found. Check your Jira URL and permissions.', 'error');
+    } else {
+      showNote(`Connected! ${S.boards.length} board(s) found.`, 'success');
+      setHeaderStatus(`Connected · ${S.boards.length} boards`);
+    }
+    if (S.boards.length > 0) {
+      S.boardId = S.boards[0].id;
+      await populateSprints(S.boardId);
+    }
+  } catch (err) {
+    console.error('Jira connect error:', err);
+    const msg = err.message.includes('Failed to fetch')
+      ? 'Could not reach Jira — possible CORS block. See the CORS note below, or check that your Jira URL is correct.'
+      : `Connection failed: ${err.message}`;
+    showNote(msg, 'error');
+    showError(msg);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Connect';
+  }
+}
+
+async function populateSprints(boardId) {
+  const sprintSel = document.getElementById('sprintSelect');
+  sprintSel.disabled = true;
+  sprintSel.innerHTML = '<option>Loading…</option>';
+  try {
+    S.sprints = await loadSprints(boardId);
+    sprintSel.innerHTML = S.sprints.length
+      ? S.sprints.map(s => `<option value="${s.id}">${s.name} (${s.state})</option>`).join('')
+      : '<option value="">No sprints found</option>';
+    sprintSel.disabled = S.sprints.length === 0;
+    // auto-select active sprint
+    const active = S.sprints.find(s => s.state === 'active');
+    if (active) sprintSel.value = active.id;
+    if (sprintSel.value) onSprintChange();
+  } catch (err) {
+    sprintSel.innerHTML = '<option>Error loading sprints</option>';
+    showError(`Failed to load sprints: ${err.message}`);
+  }
+}
+
+async function onBoardChange() {
+  S.boardId = document.getElementById('boardSelect').value;
+  if (!S.boardId) return;
+  await populateSprints(S.boardId);
+}
+
+async function onSprintChange() {
+  S.sprintId = document.getElementById('sprintSelect').value;
+  if (!S.sprintId) return;
+  await loadDashboard();
+}
+
+// ═══════════════════════════════════════════════════════
+//  MAIN DASHBOARD LOAD
+// ═══════════════════════════════════════════════════════
+async function loadDashboard() {
+  if (!S.config || !S.sprintId) return;
+  clearError();
+  showLoading();
+  setLoadingMsg('Loading sprint issues…');
+  setHeaderStatus('');
+  document.getElementById('refreshBtn').disabled = true;
+
+  try {
+    // Sprint info
+    S.sprintInfo = S.sprints.find(s => String(s.id) === String(S.sprintId)) || {};
+    updateSprintBadge(S.sprintInfo);
+
+    // Issues
+    S.issues = await loadSprintIssues(S.sprintId);
+    setLoadingMsg(`Loading worklogs for ${S.issues.length} issues…`);
+
+    // Worklogs
+    S.worklogs = await loadAllWorklogs(S.issues);
+
+    // Process
+    S.processed = processData(S.issues, S.worklogs, S.sprintInfo);
+
+    // Render
+    renderCards(S.processed);
+    renderAssigneeChart(S.processed);
+    renderDailyChart(S.processed);
+    renderTypeChart(S.processed);
+    renderDeptChart(S.processed);
+    renderTable(S.issues, S.worklogs, S.processed);
+
+    showDashboard();
+    const now = new Date().toLocaleTimeString();
+    setHeaderStatus(`Updated ${now}`);
+  } catch (err) {
+    showEmpty();
+    showError(`Error loading dashboard: ${err.message}`);
+  } finally {
+    document.getElementById('refreshBtn').disabled = false;
+  }
+}
+
+async function refreshDashboard() {
+  await loadDashboard();
+  resetAutoRefreshCountdown();
+}
+
+// ═══════════════════════════════════════════════════════
+//  AUTO REFRESH
+// ═══════════════════════════════════════════════════════
+const AUTO_REFRESH_SECONDS = 300; // 5 minutes
+
+function toggleAutoRefresh() {
+  const on = document.getElementById('autoRefresh').checked;
+  if (on) startAutoRefresh(); else stopAutoRefresh();
+}
+
+function startAutoRefresh() {
+  stopAutoRefresh();
+  resetAutoRefreshCountdown();
+}
+
+function stopAutoRefresh() {
+  clearInterval(S.autoTimer);
+  clearInterval(S.autoCountdown);
+  S.autoTimer = null;
+  S.autoCountdown = null;
+  document.getElementById('nextRefresh').textContent = '';
+}
+
+function resetAutoRefreshCountdown() {
+  const on = document.getElementById('autoRefresh').checked;
+  if (!on) return;
+  clearInterval(S.autoTimer);
+  clearInterval(S.autoCountdown);
+  let remaining = AUTO_REFRESH_SECONDS;
+  updateCountdownLabel(remaining);
+  S.autoCountdown = setInterval(() => {
+    remaining--;
+    updateCountdownLabel(remaining);
+    if (remaining <= 0) {
+      clearInterval(S.autoCountdown);
+    }
+  }, 1000);
+  S.autoTimer = setTimeout(async () => {
+    await refreshDashboard();
+  }, AUTO_REFRESH_SECONDS * 1000);
+}
+
+function updateCountdownLabel(secs) {
+  const m = Math.floor(secs / 60), s = secs % 60;
+  document.getElementById('nextRefresh').textContent =
+    `next refresh in ${m}:${String(s).padStart(2, '0')}`;
+}
+
+// ═══════════════════════════════════════════════════════
+//  INIT
+// ═══════════════════════════════════════════════════════
+(function init() {
+  loadConfig();
+  if (S.config) {
+    populateConfigFields();
+    // Auto-load boards if config exists
+    connectJira().catch(() => {});
+  } else {
+    // Open settings on first visit
+    document.getElementById('settingsPanel').classList.add('open');
+  }
+  showEmpty();
+})();
+</script>
+</body>
+</html>
