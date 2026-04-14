@@ -163,7 +163,7 @@ def fetch_sprint_issues(sprint_id):
 def fetch_issues_by_jql(jql):
     """Fetch issues matching JQL and return slimmed list."""
     issues = get_all(
-        '/rest/api/3/search',
+        '/rest/api/3/search/jql',
         {'jql': jql, 'fields': ISSUE_FIELDS},
         item_key='issues',
     )
@@ -177,7 +177,8 @@ def process_board(board):
     board_type = board.get('type', 'unknown')
     print(f'\nBoard: {board_name} ({board_type}, id={board_id})', file=sys.stderr)
 
-    if board_type == 'kanban':
+    # 'simple' boards (team-managed / next-gen) don't support the sprint endpoint
+    if board_type in ('kanban', 'simple'):
         return process_kanban_board(board_id, board_name, board_type)
     else:
         return process_scrum_board(board_id, board_name, board_type)
@@ -415,7 +416,7 @@ def main():
         jql = f'worklogDate >= "{cutoff}" ORDER BY project ASC, key ASC'
         print(f'JQL: {jql}', file=sys.stderr)
 
-        all_recent_issues = get_all('/rest/api/3/search', {'jql': jql, 'fields': ISSUE_FIELDS}, item_key='issues')
+        all_recent_issues = get_all('/rest/api/3/search/jql', {'jql': jql, 'fields': ISSUE_FIELDS}, item_key='issues')
         print(f'Found {len(all_recent_issues)} issues with recent worklogs across all projects', file=sys.stderr)
 
         # Group issues by project key
