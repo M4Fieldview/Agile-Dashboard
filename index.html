@@ -1279,7 +1279,7 @@ function renderTypeChart(d) {
 function renderProjectChart(d) {
   destroyChart('project');
   const sorted = Object.entries(d.byProject || {})
-    .filter(([, s]) => s > 0)
+    .filter(([t, s]) => s > 0 && t !== '(none)' && t.trim() !== '')
     .sort((a, b) => b[1] - a[1]);
   if (sorted.length === 0) {
     document.getElementById('projectChartCard').style.display = 'none';
