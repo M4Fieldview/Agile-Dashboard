@@ -169,6 +169,7 @@ def slim_worklogs(worklogs):
     for wl in worklogs:
         author = wl.get('author') or {}
         out.append({
+            'id':     wl.get('id', ''),   # unique worklog ID — used for deduplication
             'author': {
                 'displayName':  author.get('displayName', 'Unknown'),
                 'avatarUrls':   author.get('avatarUrls', {}),

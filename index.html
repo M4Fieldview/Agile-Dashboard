@@ -906,43 +906,42 @@ function processData(issues, worklogs, sprint) {
     });
   });
 
-  // By assignee
+  // Per-issue worklog totals — used for all chart aggregations so every
+  // number on the page comes from actual worklog entries and their logged dates,
+  // never from the issue's cumulative timespent field.
+  const issueSecondsAll = {};
+  allEntries.forEach(e => {
+    issueSecondsAll[e.issueKey] = (issueSecondsAll[e.issueKey] || 0) + e.seconds;
+  });
+
+  // By assignee (worklog-based)
   const byAssignee = {};
   allEntries.forEach(e => {
     if (!byAssignee[e.assignee]) byAssignee[e.assignee] = { seconds: 0, avatarUrl: e.assigneeAvatarUrl };
     byAssignee[e.assignee].seconds += e.seconds;
   });
 
-  // By issue type
-  const byType = {};
+  // By issue type, department, project — all worklog-based
+  const byType = {}, byDept = {}, byProject = {};
   issues.forEach(issue => {
+    const secs = issueSecondsAll[issue.key];
+    if (!secs) return;
+
     const type = issue.fields.issuetype?.name || 'Unknown';
-    const spent = issue.fields.timespent || 0;
-    byType[type] = (byType[type] || 0) + spent;
-  });
+    byType[type] = (byType[type] || 0) + secs;
 
-  // By department/component
-  const byDept = {};
-  issues.forEach(issue => {
     const depts = getDeptValues(issue);
-    const spent = issue.fields.timespent || 0;
     if (depts.length === 0) {
-      byDept['(none)'] = (byDept['(none)'] || 0) + spent;
+      byDept['(none)'] = (byDept['(none)'] || 0) + secs;
     } else {
-      depts.forEach(d => { byDept[d] = (byDept[d] || 0) + spent; });
+      depts.forEach(d => { byDept[d] = (byDept[d] || 0) + secs; });
     }
-  });
 
-  // By project number
-  const byProject = {};
-  issues.forEach(issue => {
     const proj = issue.fields?.projectNumber;
-    if (!proj) return;
-    const spent = issue.fields.timespent || 0;
-    byProject[proj] = (byProject[proj] || 0) + spent;
+    if (proj) byProject[proj] = (byProject[proj] || 0) + secs;
   });
 
-  // By day (for sprint window, or last 30 days)
+  // By day
   const byDay = {};
   allEntries.forEach(e => {
     byDay[e.dateKey] = (byDay[e.dateKey] || 0) + e.seconds;
@@ -952,7 +951,7 @@ function processData(issues, worklogs, sprint) {
   const totalSeconds   = allEntries.reduce((s, e) => s + e.seconds, 0);
   const totalEstimate  = issues.reduce((s, i) => s + (i.fields.timeoriginalestimate || 0), 0);
   const members        = new Set(allEntries.map(e => e.assignee)).size;
-  const withTime       = issues.filter(i => (i.fields.timespent || 0) > 0).length;
+  const withTime       = Object.keys(issueSecondsAll).length;
 
   return {
     allEntries, byAssignee, byType, byDept, byProject, byDay,
@@ -1872,12 +1871,11 @@ function combineAllSprintIssues(board) {
       if (!issueMap[issue.key]) {
         issueMap[issue.key] = { ...issue, worklogs: [] };
       }
-      // Merge worklogs, dedup by started+author
-      const seen = new Set(
-        issueMap[issue.key].worklogs.map(w => `${w.started}|${w.author?.displayName}`)
-      );
+      // Merge worklogs — dedup by Jira worklog ID so two entries logged by the
+      // same person on the same day are never silently collapsed into one.
+      const seen = new Set(issueMap[issue.key].worklogs.map(w => w.id || `${w.started}|${w.author?.displayName}`));
       (issue.worklogs || []).forEach(wl => {
-        const k = `${wl.started}|${wl.author?.displayName}`;
+        const k = wl.id || `${wl.started}|${wl.author?.displayName}`;
         if (!seen.has(k)) { issueMap[issue.key].worklogs.push(wl); seen.add(k); }
       });
     });
