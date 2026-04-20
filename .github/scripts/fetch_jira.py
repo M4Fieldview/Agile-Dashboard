@@ -497,17 +497,8 @@ def main():
 
     # ── Pass 2: All projects with recent worklogs (single JQL sweep) ────────────
     print('\n=== Pass 2: JQL sweep for all recently active projects ===', file=sys.stderr)
+    print(f'  Skipping project keys already covered by boards: {seen_project_keys}', file=sys.stderr)
     try:
-        # Collect project keys already fully covered by scrum boards
-        # (kanban boards don't have sprint data so we still want their project issues)
-        scrum_project_keys = set()
-        for b in output_boards:
-            if b['type'] == 'scrum':
-                loc = next((raw.get('location', {}) for raw in all_boards if raw['id'] == b['id']), {})
-                pk = loc.get('projectKey') or loc.get('projectId')
-                if pk:
-                    scrum_project_keys.add(str(pk))
-
         cutoff = (datetime.now(timezone.utc) - timedelta(days=RECENT_DAYS)).strftime('%Y-%m-%d')
         jql = f'worklogDate >= "{cutoff}" ORDER BY project ASC, key ASC'
         print(f'JQL: {jql}', file=sys.stderr)
@@ -515,11 +506,12 @@ def main():
         all_recent_issues = get_all('/rest/api/3/search/jql', {'jql': jql, 'fields': ISSUE_FIELDS}, item_key='issues')
         print(f'Found {len(all_recent_issues)} issues with recent worklogs across all projects', file=sys.stderr)
 
-        # Group issues by project key
+        # Group issues by project key — skip any project already covered by a board
+        # (scrum OR kanban) so we never create duplicate entries
         by_project = {}
         for issue in all_recent_issues:
             pk = issue['key'].split('-')[0]
-            if pk not in scrum_project_keys:
+            if pk not in seen_project_keys:
                 by_project.setdefault(pk, []).append(issue)
 
         print(f'Projects NOT already covered by scrum boards: {list(by_project.keys())}', file=sys.stderr)
