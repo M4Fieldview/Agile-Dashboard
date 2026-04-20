@@ -473,8 +473,9 @@ def main():
         print(f'  {fid}: {name}', file=sys.stderr)
 
     # Fetch a real issue to identify the project number customfield ID.
-    # The result is stored in data.json under "fieldDebug" for easy inspection.
-    sample_fields = get_sample_issue_fields('GT-1279')
+    # Fetch two tickets - GT-1279 (no project#) and GT-1259 ("2545 Merion") to
+    # find which customfield holds the project number on tickets that have one.
+    sample_fields = get_sample_issue_fields('GT-1259')
 
     SUPPORTED_DEPT_FIELD = find_field(field_map, 'Supported Department')
     PROJECT_NUMBER_FIELD = find_field(
