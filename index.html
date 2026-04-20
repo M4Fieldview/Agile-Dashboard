@@ -628,10 +628,10 @@
           <canvas id="chartAssignee"></canvas>
         </div>
       </div>
-      <div class="chart-card">
-        <h3>Daily Logging Trend</h3>
+      <div class="chart-card" id="projectChartCard" style="display:none">
+        <h3>Hours by Project Number</h3>
         <div class="chart-wrap tall">
-          <canvas id="chartDaily"></canvas>
+          <canvas id="chartProject"></canvas>
         </div>
       </div>
     </div>
@@ -648,12 +648,6 @@
         <h3 id="deptChartTitle">Hours by Supported Department</h3>
         <div class="chart-wrap medium">
           <canvas id="chartDept"></canvas>
-        </div>
-      </div>
-      <div class="chart-card" id="projectChartCard" style="display:none">
-        <h3>Hours by Project Number</h3>
-        <div class="chart-wrap medium">
-          <canvas id="chartProject"></canvas>
         </div>
       </div>
     </div>
@@ -1041,7 +1035,6 @@ function applyDateFilter() {
   updateDateRangeLabel();
   renderCards(filtered);
   renderAssigneeChart(filtered);
-  renderDailyChart(filtered);
   renderTypeChart(filtered);
   renderDeptChart(filtered);
   renderProjectChart(filtered);
@@ -1202,47 +1195,6 @@ function renderAssigneeChart(d) {
   });
 }
 
-function renderDailyChart(d) {
-  destroyChart('daily');
-  // Build sorted day list
-  const days = Object.keys(d.byDay).sort();
-  if (days.length === 0) return;
-  const labels = days.map(day => {
-    const dt = new Date(day + 'T12:00:00');
-    return dt.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
-  });
-  const values = days.map(day => +(secToHours(d.byDay[day]).toFixed(1)));
-  const ctx = document.getElementById('chartDaily').getContext('2d');
-  S.charts.daily = new Chart(ctx, {
-    type: 'line',
-    data: {
-      labels,
-      datasets: [{
-        data: values,
-        borderColor: '#2684FF',
-        backgroundColor: 'rgba(38,132,255,.12)',
-        borderWidth: 2.5,
-        fill: true,
-        tension: 0.35,
-        pointRadius: 4,
-        pointHoverRadius: 6,
-        pointBackgroundColor: '#2684FF',
-      }],
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      plugins: {
-        legend: { display: false },
-        tooltip: { callbacks: { label: ctx => ` ${ctx.raw}h logged` } },
-      },
-      scales: {
-        x: { grid: { display: false }, ticks: { maxRotation: 45, font: { size: 11 } } },
-        y: { beginAtZero: true, ticks: { callback: v => `${v}h` }, grid: { color: '#F0F0F0' } },
-      },
-    },
-  });
-}
 
 function renderTypeChart(d) {
   destroyChart('type');
