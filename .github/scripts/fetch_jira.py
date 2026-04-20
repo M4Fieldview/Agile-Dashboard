@@ -100,10 +100,41 @@ def get_all(path, extra=None, item_key=None):
 def discover_fields():
     """Return a dict mapping lowercase field names to their IDs."""
     try:
-        return {f['name'].lower(): f['id'] for f in get('/rest/api/3/field')}
+        fields = get('/rest/api/3/field')
+        mapping = {f['name'].lower(): f['id'] for f in fields}
+        # Also include untranslated name if different
+        for f in fields:
+            untranslated = (f.get('untranslatedName') or '').lower()
+            if untranslated and untranslated not in mapping:
+                mapping[untranslated] = f['id']
+        return mapping
     except Exception as e:
         print(f'  Warning: could not discover fields: {e}', file=sys.stderr)
         return {}
+
+
+def dump_sample_issue_fields(issue_key):
+    """Fetch one issue with all fields and print every customfield that has a value."""
+    print(f'\n=== Dumping ALL fields on {issue_key} ===', file=sys.stderr)
+    try:
+        issue = get(f'/rest/api/3/issue/{issue_key}', {'fields': '*all'})
+        fields = issue.get('fields', {})
+        for k, v in sorted(fields.items()):
+            if v is None or v == [] or v == '':
+                continue
+            # Summarise the value so it's readable
+            if isinstance(v, dict):
+                summary = v.get('value') or v.get('name') or v.get('displayName') or str(v)[:80]
+            elif isinstance(v, list):
+                summary = ', '.join(
+                    (x.get('value') or x.get('name') or str(x))[:40] if isinstance(x, dict) else str(x)[:40]
+                    for x in v[:5]
+                )
+            else:
+                summary = str(v)[:120]
+            print(f'  {k}: {summary}', file=sys.stderr)
+    except Exception as e:
+        print(f'  Could not fetch {issue_key}: {e}', file=sys.stderr)
 
 
 def find_field(field_map, *names):
@@ -436,6 +467,10 @@ def main():
     print('All custom fields:', file=sys.stderr)
     for name, fid in sorted(custom_fields.items()):
         print(f'  {fid}: {name}', file=sys.stderr)
+
+    # Dump a real issue so we can see which customfield_XXXXX holds the project number
+    # (GT-1279 is a known issue from the GT board)
+    dump_sample_issue_fields('GT-1279')
 
     SUPPORTED_DEPT_FIELD = find_field(field_map, 'Supported Department')
     PROJECT_NUMBER_FIELD = find_field(
