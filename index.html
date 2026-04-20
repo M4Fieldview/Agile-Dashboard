@@ -2067,34 +2067,13 @@ function loadCombinedBoardsFromJson(boardIds) {
   loadConfig();
   if (S.config) populateConfigFields();
 
-  // If GitHub token + repo are configured, trigger a live workflow run on every page load
-  if (S.config?.ghToken && S.config?.ghRepo) {
-    // Show cached data immediately so the page isn't blank while waiting
-    const cachedData = await tryLoadDataJson();
-    if (cachedData?.boards?.length) activateJsonMode(cachedData);
-
-    // Trigger fresh run and swap in new data when ready
-    document.getElementById('refreshBtn').disabled = true;
-    const success = await triggerAndWaitForWorkflow();
-    document.getElementById('refreshBtn').disabled = false;
-
-    if (success) {
-      const freshData = await tryLoadDataJson();
-      if (freshData?.boards?.length) {
-        activateJsonMode(freshData);
-        const fetched = new Date(freshData.fetchedAt);
-        setHeaderStatus(`✓ Live · ${fetched.toLocaleTimeString()}`);
-      }
-    } else if (cachedData?.boards?.length) {
-      setHeaderStatus('⚠ Refresh timed out — showing cached data');
-    }
-    return;
-  }
-
-  // No GitHub token — fall back to cached data.json
+  // Always load cached data.json instantly on page load — no workflow trigger.
+  // Use the ↻ Refresh button when you want a fresh pull from Jira.
   const jsonData = await tryLoadDataJson();
   if (jsonData && Array.isArray(jsonData.boards) && jsonData.boards.length > 0) {
     activateJsonMode(jsonData);
+    const fetched = new Date(jsonData.fetchedAt);
+    setHeaderStatus(`Cached · ${fetched.toLocaleTimeString()}`);
     return;
   }
 
