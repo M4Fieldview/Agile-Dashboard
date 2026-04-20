@@ -113,28 +113,32 @@ def discover_fields():
         return {}
 
 
-def dump_sample_issue_fields(issue_key):
-    """Fetch one issue with all fields and print every customfield that has a value."""
-    print(f'\n=== Dumping ALL fields on {issue_key} ===', file=sys.stderr)
+def get_sample_issue_fields(issue_key):
+    """Fetch one issue with all fields, return dict of non-null customfields with readable values."""
+    print(f'\n=== Fetching all fields on {issue_key} for debug ===', file=sys.stderr)
+    result = {}
     try:
         issue = get(f'/rest/api/3/issue/{issue_key}', {'fields': '*all'})
-        fields = issue.get('fields', {})
-        for k, v in sorted(fields.items()):
+        raw_fields = issue.get('fields', {})
+        for k, v in sorted(raw_fields.items()):
             if v is None or v == [] or v == '':
                 continue
-            # Summarise the value so it's readable
+            # Summarise the value
             if isinstance(v, dict):
-                summary = v.get('value') or v.get('name') or v.get('displayName') or str(v)[:80]
+                summary = v.get('value') or v.get('name') or v.get('displayName') or str(v)[:120]
             elif isinstance(v, list):
                 summary = ', '.join(
-                    (x.get('value') or x.get('name') or str(x))[:40] if isinstance(x, dict) else str(x)[:40]
+                    (x.get('value') or x.get('name') or str(x))[:60] if isinstance(x, dict) else str(x)[:60]
                     for x in v[:5]
                 )
             else:
                 summary = str(v)[:120]
+            result[k] = summary
             print(f'  {k}: {summary}', file=sys.stderr)
     except Exception as e:
         print(f'  Could not fetch {issue_key}: {e}', file=sys.stderr)
+        result['_error'] = str(e)
+    return result
 
 
 def find_field(field_map, *names):
@@ -468,9 +472,9 @@ def main():
     for name, fid in sorted(custom_fields.items()):
         print(f'  {fid}: {name}', file=sys.stderr)
 
-    # Dump a real issue so we can see which customfield_XXXXX holds the project number
-    # (GT-1279 is a known issue from the GT board)
-    dump_sample_issue_fields('GT-1279')
+    # Fetch a real issue to identify the project number customfield ID.
+    # The result is stored in data.json under "fieldDebug" for easy inspection.
+    sample_fields = get_sample_issue_fields('GT-1279')
 
     SUPPORTED_DEPT_FIELD = find_field(field_map, 'Supported Department')
     PROJECT_NUMBER_FIELD = find_field(
@@ -587,13 +591,18 @@ def main():
 
     # ── Write output ──────────────────────────────────────────────────────────
     result = {
-        'fetchedAt':          datetime.now(timezone.utc).isoformat(),
-        'boards':             output_boards,
+        'fetchedAt':      datetime.now(timezone.utc).isoformat(),
+        'boards':         output_boards,
         'discoveredFields': {
             'supportedDept':  SUPPORTED_DEPT_FIELD,
             'projectNumber':  PROJECT_NUMBER_FIELD,
-            # All custom field names → IDs for debugging (sorted alphabetically)
+            # All custom field names → IDs (sorted alphabetically)
             'all': {name: fid for name, fid in sorted(custom_fields.items())},
+        },
+        # Every non-null field on GT-1279 — use this to find the project number field ID
+        'fieldDebug': {
+            'issueKey':  'GT-1279',
+            'fields':    sample_fields,
         },
     }
 
