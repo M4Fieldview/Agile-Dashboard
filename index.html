@@ -166,6 +166,83 @@
     .badge-dot.closed { background: var(--muted); }
     .sprint-bar-spacer { flex: 1; }
     .refresh-row { display: flex; align-items: center; gap: 8px; }
+
+    /* ── TAB BAR ── */
+    .tab-bar {
+      background: var(--card);
+      border-bottom: 1px solid var(--border);
+      padding: 0 20px;
+      display: flex;
+      gap: 4px;
+    }
+    .tab-btn {
+      cursor: pointer;
+      border: none;
+      background: transparent;
+      padding: 10px 16px;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--muted);
+      border-bottom: 3px solid transparent;
+      transition: all .15s;
+      margin-bottom: -1px;
+    }
+    .tab-btn:hover { color: var(--blue); }
+    .tab-btn.active {
+      color: var(--blue);
+      border-bottom-color: var(--blue);
+    }
+
+    /* ── MULTI-BOARD CHECKBOX PANEL ── */
+    .multi-board-panel {
+      background: var(--card);
+      border-bottom: 1px solid var(--border);
+      padding: 12px 20px;
+      display: none;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .multi-board-panel.active { display: flex; }
+    .multi-board-header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    .multi-board-header label {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--muted);
+    }
+    .multi-board-actions {
+      display: flex;
+      gap: 6px;
+    }
+    .multi-board-actions button {
+      cursor: pointer;
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 3px 10px;
+      font-size: 12px;
+      background: #fff;
+      color: var(--muted);
+    }
+    .multi-board-actions button:hover { border-color: var(--blue-lt); color: var(--blue); }
+    .multi-board-list {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+      gap: 6px 16px;
+    }
+    .multi-board-list label {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 13px;
+      color: var(--text);
+      cursor: pointer;
+      padding: 3px 0;
+    }
+    .multi-board-list input { cursor: pointer; }
     .auto-refresh-label { font-size: 12px; color: var(--muted); display: flex; align-items: center; gap: 5px; cursor: pointer; }
     .auto-refresh-label input { cursor: pointer; }
 
@@ -535,8 +612,14 @@
 <!-- hidden sprint select kept for API mode compatibility -->
 <select id="sprintSelect" onchange="onSprintChange()" style="display:none"></select>
 
+<!-- ══════════════════════ TAB BAR ══════════════════════ -->
+<div class="tab-bar">
+  <button class="tab-btn active" id="tabSingle" onclick="switchTab('single')">Single Board</button>
+  <button class="tab-btn" id="tabCombined" onclick="switchTab('combined')">Combined Boards</button>
+</div>
+
 <!-- ══════════════════════ SPRINT BAR ══════════════════════ -->
-<div class="sprint-bar">
+<div class="sprint-bar" id="singleBoardBar">
   <div class="sprint-bar-group">
     <label>Board</label>
     <select id="boardSelect" onchange="onBoardChange()" disabled>
@@ -551,6 +634,22 @@
       Auto-refresh (5 min)
     </label>
     <span id="nextRefresh" style="font-size:12px;color:var(--muted);"></span>
+  </div>
+</div>
+
+<!-- ══════════════════════ MULTI-BOARD PANEL ══════════════════════ -->
+<div class="multi-board-panel" id="multiBoardPanel">
+  <div class="multi-board-header">
+    <label>Select boards to combine:</label>
+    <div class="multi-board-actions">
+      <button type="button" onclick="multiBoardSelectAll(true)">Select all</button>
+      <button type="button" onclick="multiBoardSelectAll(false)">Clear</button>
+      <button type="button" onclick="applyCombinedBoards()" style="background:var(--blue);color:#fff;border-color:var(--blue);">Apply</button>
+    </div>
+    <span id="multiBoardCount" style="font-size:12px;color:var(--muted);"></span>
+  </div>
+  <div class="multi-board-list" id="multiBoardList">
+    <span style="color:var(--muted);font-size:13px;">— connect first —</span>
   </div>
 </div>
 
@@ -719,6 +818,8 @@ const S = {
   autoTimer: null,
   autoCountdown: null,
   charts: {},
+  activeTab: 'single',      // 'single' | 'combined'
+  combinedBoardIds: [],     // board IDs currently selected in combined tab
 };
 
 // ═══════════════════════════════════════════════════════
@@ -1811,7 +1912,13 @@ function activateJsonMode(jsonData) {
   if (defaultBoard) {
     S.boardId = String(defaultBoard.id);
     boardSel.value = S.boardId;
-    loadBoardFromJson(S.boardId);
+    if (S.activeTab !== 'combined') loadBoardFromJson(S.boardId);
+  }
+
+  // Keep the multi-board checkbox list in sync with the latest data
+  populateMultiBoardList();
+  if (S.activeTab === 'combined' && S.combinedBoardIds.length) {
+    loadCombinedBoardsFromJson(S.combinedBoardIds);
   }
 }
 
@@ -1852,6 +1959,105 @@ function loadBoardFromJson(boardId) {
 
   const fetched = new Date(S.jsonData.fetchedAt);
   setHeaderStatus(`Data refreshed ${fetched.toLocaleTimeString()}`);
+}
+
+// ═══════════════════════════════════════════════════════
+//  TABS  (Single Board / Combined Boards)
+// ═══════════════════════════════════════════════════════
+function switchTab(tab) {
+  S.activeTab = tab;
+  const isCombined = tab === 'combined';
+  document.getElementById('tabSingle').classList.toggle('active', !isCombined);
+  document.getElementById('tabCombined').classList.toggle('active', isCombined);
+  document.getElementById('singleBoardBar').style.display = isCombined ? 'none' : '';
+  document.getElementById('multiBoardPanel').classList.toggle('active', isCombined);
+
+  if (isCombined) {
+    populateMultiBoardList();
+    // If the user already had a selection, apply it; otherwise wait for Apply click
+    if (S.combinedBoardIds && S.combinedBoardIds.length) {
+      loadCombinedBoardsFromJson(S.combinedBoardIds);
+    }
+  } else {
+    // Switch back to single board
+    if (S.boardId && S.mode === 'json') loadBoardFromJson(S.boardId);
+  }
+}
+
+function populateMultiBoardList() {
+  const list = document.getElementById('multiBoardList');
+  if (!S.jsonData || !(S.jsonData.boards || []).length) {
+    list.innerHTML = '<span style="color:var(--muted);font-size:13px;">— connect first —</span>';
+    return;
+  }
+  const selected = new Set((S.combinedBoardIds || []).map(String));
+  list.innerHTML = S.jsonData.boards.map(b => {
+    const hasData = (b.sprints || []).some(s => (s.issues || []).some(i => (i.worklogs || []).length > 0));
+    const checked = selected.has(String(b.id)) ? 'checked' : '';
+    const dim = hasData ? '' : 'style="color:var(--muted);"';
+    return `<label ${dim}><input type="checkbox" class="mb-chk" value="${b.id}" ${checked} onchange="updateMultiBoardCount()"/> ${b.name}${hasData ? '' : ' <em style="font-size:11px;">(no worklogs)</em>'}</label>`;
+  }).join('');
+  updateMultiBoardCount();
+}
+
+function multiBoardSelectAll(on) {
+  document.querySelectorAll('#multiBoardList .mb-chk').forEach(cb => { cb.checked = on; });
+  updateMultiBoardCount();
+}
+
+function updateMultiBoardCount() {
+  const n = document.querySelectorAll('#multiBoardList .mb-chk:checked').length;
+  document.getElementById('multiBoardCount').textContent = n ? `${n} board${n === 1 ? '' : 's'} selected` : '';
+}
+
+function applyCombinedBoards() {
+  const ids = Array.from(document.querySelectorAll('#multiBoardList .mb-chk:checked')).map(cb => cb.value);
+  if (!ids.length) {
+    showError('Select at least one board to combine.');
+    return;
+  }
+  clearError();
+  S.combinedBoardIds = ids;
+  loadCombinedBoardsFromJson(ids);
+}
+
+function loadCombinedBoardsFromJson(boardIds) {
+  if (!S.jsonData) return;
+  const idSet = new Set(boardIds.map(String));
+  const boards = (S.jsonData.boards || []).filter(b => idSet.has(String(b.id)));
+  if (!boards.length) return;
+
+  // Merge issues across all selected boards — dedup issues by key, dedup
+  // worklogs by Jira worklog ID so a ticket appearing on multiple boards
+  // does not double-count hours.
+  const issueMap = {};
+  boards.forEach(board => {
+    const boardIssues = combineAllSprintIssues(board);
+    boardIssues.forEach(issue => {
+      if (!issueMap[issue.key]) {
+        issueMap[issue.key] = { ...issue, worklogs: [] };
+      }
+      const seen = new Set(issueMap[issue.key].worklogs.map(w => w.id || `${w.started}|${w.author?.displayName}`));
+      (issue.worklogs || []).forEach(wl => {
+        const k = wl.id || `${wl.started}|${wl.author?.displayName}`;
+        if (!seen.has(k)) { issueMap[issue.key].worklogs.push(wl); seen.add(k); }
+      });
+    });
+  });
+
+  S.issues   = Object.values(issueMap);
+  S.worklogs = {};
+  S.issues.forEach(issue => { S.worklogs[issue.key] = issue.worklogs || []; });
+  const names = boards.map(b => b.name).join(' + ');
+  S.sprintInfo = { name: `Combined: ${names}`, state: 'active' };
+
+  S.processed = processData(S.issues, S.worklogs, S.sprintInfo);
+  S.dateFrom  = null;
+  S.dateTo    = null;
+  renderAllWithDateFilter();
+
+  const fetched = new Date(S.jsonData.fetchedAt);
+  setHeaderStatus(`Combined ${boards.length} boards · refreshed ${fetched.toLocaleTimeString()}`);
 }
 
 // ═══════════════════════════════════════════════════════
