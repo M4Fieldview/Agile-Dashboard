@@ -462,32 +462,12 @@ def build_time_windows(total_days, window_days=14):
 def main():
     global SUPPORTED_DEPT_FIELD, PROJECT_NUMBER_FIELD, ISSUE_FIELDS
 
-    # ── Discover custom fields ───────────────────────────────────────────────
-    print('=== Discovering custom fields ===', file=sys.stderr)
-    field_map = discover_fields()
-
-    # Log ALL custom fields so we can debug field-name mismatches
-    custom_fields = {name: fid for name, fid in field_map.items() if fid.startswith('customfield_')}
-    print('All custom fields:', file=sys.stderr)
-    for name, fid in sorted(custom_fields.items()):
-        print(f'  {fid}: {name}', file=sys.stderr)
-
-    # Fetch a real issue to identify the project number customfield ID.
-    # Fetch two tickets - GT-1279 (no project#) and GT-1259 ("2545 Merion") to
-    # find which customfield holds the project number on tickets that have one.
-    sample_fields = get_sample_issue_fields('GT-1259')
-
-    SUPPORTED_DEPT_FIELD = find_field(field_map, 'Supported Department')
-    PROJECT_NUMBER_FIELD = find_field(
-        field_map,
-        'Project Number', 'Project #', 'Project No', 'Project No.',
-        'Job Number', 'Job #', 'Job No', 'Job No.',
-        'GT Number', 'GT #', 'GT No',
-        'Work Order', 'Work Order #', 'Work Order Number',
-        'WO Number', 'WO #',
-        'Contract Number', 'Contract #',
-        'PO Number', 'PO #',
-    )
+    # ── Set custom field IDs (project-scoped, discovered from GT-1259) ─────────
+    # These are project-scoped fields in the GIS Tasks / GT project and do NOT
+    # appear in the global /rest/api/3/field endpoint, so name-based discovery
+    # always missed them. Hardcoded after inspecting GT-1259 with fields=*all.
+    SUPPORTED_DEPT_FIELD = 'customfield_10397'   # "LU Construction", "M4", etc.
+    PROJECT_NUMBER_FIELD = 'customfield_10463'   # "2545", "1234", etc.
     ISSUE_FIELDS = _base_issue_fields()
     print(f'SUPPORTED_DEPT_FIELD: {SUPPORTED_DEPT_FIELD}', file=sys.stderr)
     print(f'PROJECT_NUMBER_FIELD: {PROJECT_NUMBER_FIELD}', file=sys.stderr)
@@ -592,19 +572,8 @@ def main():
 
     # ── Write output ──────────────────────────────────────────────────────────
     result = {
-        'fetchedAt':      datetime.now(timezone.utc).isoformat(),
-        'boards':         output_boards,
-        'discoveredFields': {
-            'supportedDept':  SUPPORTED_DEPT_FIELD,
-            'projectNumber':  PROJECT_NUMBER_FIELD,
-            # All custom field names → IDs (sorted alphabetically)
-            'all': {name: fid for name, fid in sorted(custom_fields.items())},
-        },
-        # Every non-null field on GT-1279 — use this to find the project number field ID
-        'fieldDebug': {
-            'issueKey':  'GT-1279',
-            'fields':    sample_fields,
-        },
+        'fetchedAt': datetime.now(timezone.utc).isoformat(),
+        'boards':    output_boards,
     }
 
     out_path = os.path.normpath(
