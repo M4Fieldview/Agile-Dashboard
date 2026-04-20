@@ -676,6 +676,7 @@
 <main id="main">
 
   <div id="errorBox" class="error-box" style="display:none"></div>
+  <div id="fieldDiscoveryWarn" style="display:none;background:#FFFAE6;border:1px solid #FFE380;border-radius:6px;padding:10px 14px;margin:0 0 12px;font-size:13px;color:#172B4D;line-height:1.5;"></div>
 
   <!-- EMPTY STATE -->
   <div id="emptyState" class="state-box">
@@ -1919,6 +1920,33 @@ function activateJsonMode(jsonData) {
   populateMultiBoardList();
   if (S.activeTab === 'combined' && S.combinedBoardIds.length) {
     loadCombinedBoardsFromJson(S.combinedBoardIds);
+  }
+
+  // Warn if project number field wasn't discovered
+  checkFieldDiscovery(jsonData);
+}
+
+function checkFieldDiscovery(jsonData) {
+  const df = jsonData.discoveredFields;
+  if (!df) return; // old data.json without this section
+
+  const warn = document.getElementById('fieldDiscoveryWarn');
+  if (!warn) return;
+
+  if (!df.projectNumber) {
+    const allNames = Object.keys(df.all || {}).sort();
+    const fieldList = allNames.length
+      ? `<details style="margin-top:6px;cursor:pointer"><summary style="font-weight:600">Show all ${allNames.length} available custom fields</summary><div style="margin-top:6px;font-family:monospace;font-size:11px;line-height:1.8;">${
+          allNames.map(n => `${(df.all[n]||'').padEnd ? (df.all[n]||'') : df.all[n]}: <strong>${n}</strong>`).join('<br>')
+        }</div></details>`
+      : '';
+    warn.innerHTML = `⚠ <strong>Project # field not found.</strong> The fetch script couldn't match any of its known field names in your Jira instance.
+      Click ↻ Refresh so the script re-runs and logs all fields, then check the Actions run log at
+      <a href="https://github.com/M4Fieldview/Agile-Dashboard/actions" target="_blank" style="color:inherit">github.com/M4Fieldview/Agile-Dashboard/actions</a>
+      to find the exact field name — then let me know and I'll add it.${fieldList}`;
+    warn.style.display = '';
+  } else {
+    warn.style.display = 'none';
   }
 }
 

@@ -430,9 +430,27 @@ def main():
     # ── Discover custom fields ───────────────────────────────────────────────
     print('=== Discovering custom fields ===', file=sys.stderr)
     field_map = discover_fields()
+
+    # Log ALL custom fields so we can debug field-name mismatches
+    custom_fields = {name: fid for name, fid in field_map.items() if fid.startswith('customfield_')}
+    print('All custom fields:', file=sys.stderr)
+    for name, fid in sorted(custom_fields.items()):
+        print(f'  {fid}: {name}', file=sys.stderr)
+
     SUPPORTED_DEPT_FIELD = find_field(field_map, 'Supported Department')
-    PROJECT_NUMBER_FIELD = find_field(field_map, 'Project Number', 'Project #', 'Project No')
+    PROJECT_NUMBER_FIELD = find_field(
+        field_map,
+        'Project Number', 'Project #', 'Project No', 'Project No.',
+        'Job Number', 'Job #', 'Job No', 'Job No.',
+        'GT Number', 'GT #', 'GT No',
+        'Work Order', 'Work Order #', 'Work Order Number',
+        'WO Number', 'WO #',
+        'Contract Number', 'Contract #',
+        'PO Number', 'PO #',
+    )
     ISSUE_FIELDS = _base_issue_fields()
+    print(f'SUPPORTED_DEPT_FIELD: {SUPPORTED_DEPT_FIELD}', file=sys.stderr)
+    print(f'PROJECT_NUMBER_FIELD: {PROJECT_NUMBER_FIELD}', file=sys.stderr)
     print(f'ISSUE_FIELDS: {ISSUE_FIELDS}', file=sys.stderr)
 
     # ── Pass 1: Agile boards ─────────────────────────────────────────────────
@@ -534,8 +552,14 @@ def main():
 
     # ── Write output ──────────────────────────────────────────────────────────
     result = {
-        'fetchedAt': datetime.now(timezone.utc).isoformat(),
-        'boards':    output_boards,
+        'fetchedAt':          datetime.now(timezone.utc).isoformat(),
+        'boards':             output_boards,
+        'discoveredFields': {
+            'supportedDept':  SUPPORTED_DEPT_FIELD,
+            'projectNumber':  PROJECT_NUMBER_FIELD,
+            # All custom field names → IDs for debugging (sorted alphabetically)
+            'all': {name: fid for name, fid in sorted(custom_fields.items())},
+        },
     }
 
     out_path = os.path.normpath(
