@@ -1206,10 +1206,12 @@ function updateDateRangeLabel() {
 
 function renderTableFiltered(filtered) {
   // Re-build tableRows using filtered per-issue seconds instead of issue.fields.timespent
+  // Only include issues that have logged time within the active date range
   const issueSeconds = filtered.issueSeconds || {};
   const maxLogged = Math.max(...S.issues.map(i => issueSeconds[i.key] || 0), 1);
+  const issuesInRange = S.issues.filter(i => (issueSeconds[i.key] || 0) > 0);
 
-  S.tableRows = S.issues.map(issue => {
+  S.tableRows = issuesInRange.map(issue => {
     const f      = issue.fields;
     const logged = issueSeconds[issue.key] || 0;
     const est    = f.timeoriginalestimate || 0;
