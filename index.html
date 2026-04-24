@@ -373,7 +373,21 @@
       box-shadow: var(--shadow);
       padding: 18px 20px;
     }
-    .chart-card h3 {
+    .chart-card-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 14px;
+    }
+    .chart-card-header h3 {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: .04em;
+      margin: 0;
+    }
+    .chart-card h3 { /* legacy — keep for any h3 not wrapped */
       font-size: 13px;
       font-weight: 600;
       color: var(--muted);
@@ -381,6 +395,69 @@
       letter-spacing: .04em;
       margin-bottom: 14px;
     }
+    .chart-actions { display: flex; gap: 4px; }
+    .chart-action-btn {
+      background: none;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 2px 7px;
+      font-size: 11px;
+      color: var(--muted);
+      cursor: pointer;
+      line-height: 1.6;
+      transition: background .15s, color .15s;
+    }
+    .chart-action-btn:hover { background: var(--blue); color: #fff; border-color: var(--blue); }
+
+    /* ── CHART EXPAND MODAL ── */
+    .chart-modal-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,.55);
+      z-index: 1000;
+      align-items: center;
+      justify-content: center;
+    }
+    .chart-modal-overlay.open { display: flex; }
+    .chart-modal {
+      background: var(--card);
+      border-radius: var(--radius);
+      box-shadow: 0 8px 40px rgba(0,0,0,.3);
+      padding: 24px;
+      width: 90vw;
+      max-width: 1100px;
+      max-height: 88vh;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+    .chart-modal-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .chart-modal-header h3 {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: .04em;
+      margin: 0;
+    }
+    .chart-modal-close {
+      background: none;
+      border: none;
+      font-size: 22px;
+      line-height: 1;
+      cursor: pointer;
+      color: var(--muted);
+      padding: 0 4px;
+    }
+    .chart-modal-close:hover { color: var(--text); }
+    .chart-modal-wrap { position: relative; flex: 1; min-height: 0; height: 65vh; }
+    .chart-modal-wrap canvas { width: 100% !important; height: 100% !important; }
+
     .chart-wrap { position: relative; }
     .chart-wrap.tall { height: 260px; }
     .chart-wrap.medium { height: 220px; }
@@ -723,13 +800,25 @@
     <!-- Charts Row 1 -->
     <div class="charts-row">
       <div class="chart-card">
-        <h3>Hours by Team Member</h3>
+        <div class="chart-card-header">
+          <h3>Hours by Team Member</h3>
+          <div class="chart-actions">
+            <button class="chart-action-btn" onclick="exportChartCSV('assignee')" title="Export CSV">⬇ CSV</button>
+            <button class="chart-action-btn" onclick="expandChart('assignee','Hours by Team Member')" title="Expand">⤢ Expand</button>
+          </div>
+        </div>
         <div class="chart-wrap tall">
           <canvas id="chartAssignee"></canvas>
         </div>
       </div>
       <div class="chart-card" id="projectChartCard" style="display:none">
-        <h3>Hours by Project Number</h3>
+        <div class="chart-card-header">
+          <h3>Hours by Project Number</h3>
+          <div class="chart-actions">
+            <button class="chart-action-btn" onclick="exportChartCSV('project')" title="Export CSV">⬇ CSV</button>
+            <button class="chart-action-btn" onclick="expandChart('project','Hours by Project Number')" title="Expand">⤢ Expand</button>
+          </div>
+        </div>
         <div class="chart-wrap tall">
           <canvas id="chartProject"></canvas>
         </div>
@@ -739,13 +828,25 @@
     <!-- Charts Row 2 -->
     <div class="charts-row">
       <div class="chart-card">
-        <h3>Hours by Issue Type</h3>
+        <div class="chart-card-header">
+          <h3>Hours by Issue Type</h3>
+          <div class="chart-actions">
+            <button class="chart-action-btn" onclick="exportChartCSV('type')" title="Export CSV">⬇ CSV</button>
+            <button class="chart-action-btn" onclick="expandChart('type','Hours by Issue Type')" title="Expand">⤢ Expand</button>
+          </div>
+        </div>
         <div class="chart-wrap medium">
           <canvas id="chartType"></canvas>
         </div>
       </div>
       <div class="chart-card" id="deptChartCard">
-        <h3 id="deptChartTitle">Hours by Supported Department</h3>
+        <div class="chart-card-header">
+          <h3 id="deptChartTitle">Hours by Supported Department</h3>
+          <div class="chart-actions">
+            <button class="chart-action-btn" onclick="exportChartCSV('dept')" title="Export CSV">⬇ CSV</button>
+            <button class="chart-action-btn" onclick="expandChart('dept', document.getElementById('deptChartTitle').textContent)" title="Expand">⤢ Expand</button>
+          </div>
+        </div>
         <div class="chart-wrap medium">
           <canvas id="chartDept"></canvas>
         </div>
@@ -764,6 +865,7 @@
           <select id="tableFilterAssignee" onchange="filterTable()">
             <option value="">All Assignees</option>
           </select>
+          <button class="chart-action-btn" onclick="exportTableCSV()" title="Export visible rows to CSV">⬇ CSV</button>
         </div>
       </div>
       <div class="table-wrap">
@@ -790,6 +892,19 @@
 
   </div><!-- /dashboardContent -->
 </main>
+
+<!-- ══════════════════════ CHART EXPAND MODAL ══════════════════════ -->
+<div class="chart-modal-overlay" id="chartModalOverlay" onclick="closeChartModal(event)">
+  <div class="chart-modal">
+    <div class="chart-modal-header">
+      <h3 id="chartModalTitle"></h3>
+      <button class="chart-modal-close" onclick="closeChartModal(null)" title="Close">✕</button>
+    </div>
+    <div class="chart-modal-wrap">
+      <canvas id="chartModalCanvas"></canvas>
+    </div>
+  </div>
+</div>
 
 <footer class="footer">
   Agile Time Tracking Dashboard — data sourced live from Jira Cloud
@@ -1362,6 +1477,86 @@ function renderProjectChart(d) {
   });
 }
 
+// ═══════════════════════════════════════════════════════
+//  CHART EXPAND + CSV EXPORT
+// ═══════════════════════════════════════════════════════
+let _modalChart = null;
+
+function expandChart(chartKey, title) {
+  const src = S.charts[chartKey];
+  if (!src) return;
+
+  document.getElementById('chartModalTitle').textContent = title;
+  document.getElementById('chartModalOverlay').classList.add('open');
+  document.body.style.overflow = 'hidden';
+
+  if (_modalChart) { _modalChart.destroy(); _modalChart = null; }
+
+  // Deep-clone the chart config from the source chart
+  const srcConfig = src.config;
+  const ctx = document.getElementById('chartModalCanvas').getContext('2d');
+
+  _modalChart = new Chart(ctx, {
+    type: srcConfig.type,
+    data: JSON.parse(JSON.stringify(srcConfig.data)),
+    options: {
+      ...JSON.parse(JSON.stringify(srcConfig.options)),
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: false,
+    },
+  });
+}
+
+function closeChartModal(e) {
+  if (e && e.target !== document.getElementById('chartModalOverlay')) return;
+  document.getElementById('chartModalOverlay').classList.remove('open');
+  document.body.style.overflow = '';
+  if (_modalChart) { _modalChart.destroy(); _modalChart = null; }
+}
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') closeChartModal(null);
+});
+
+function exportChartCSV(chartKey) {
+  const chart = S.charts[chartKey];
+  if (!chart) return;
+
+  const data  = chart.config.data;
+  const labels = data.labels || [];
+  const isMultiDataset = data.datasets.length > 1;
+
+  let csv = '';
+  if (isMultiDataset) {
+    const headers = ['Label', ...data.datasets.map(ds => ds.label || 'Value')];
+    csv = headers.join(',') + '\n';
+    labels.forEach((lbl, i) => {
+      const row = [JSON.stringify(String(lbl)), ...data.datasets.map(ds => ds.data[i] ?? '')];
+      csv += row.join(',') + '\n';
+    });
+  } else {
+    csv = 'Label,Hours\n';
+    const vals = data.datasets[0]?.data || [];
+    labels.forEach((lbl, i) => {
+      csv += `${JSON.stringify(String(lbl))},${vals[i] ?? ''}\n`;
+    });
+  }
+
+  const titles = {
+    assignee: 'Hours by Team Member',
+    project:  'Hours by Project Number',
+    type:     'Hours by Issue Type',
+    dept:     document.getElementById('deptChartTitle')?.textContent || 'Hours by Department',
+  };
+  const name = (titles[chartKey] || chartKey).replace(/[^a-z0-9]+/gi, '_');
+  const blob = new Blob([csv], { type: 'text/csv' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href = url; a.download = `${name}.csv`; a.click();
+  URL.revokeObjectURL(url);
+}
+
 function renderDeptChart(d) {
   destroyChart('dept');
   const sorted = Object.entries(d.byDept)
@@ -1464,6 +1659,44 @@ function populateTableFilters(rows) {
 
 function filterTable() {
   sortAndRenderTable();
+}
+
+function exportTableCSV() {
+  // Export the currently visible (filtered + sorted) table rows
+  const search   = (document.getElementById('tableSearch')?.value || '').toLowerCase();
+  const typeF    = document.getElementById('tableFilterType')?.value  || '';
+  const assigneeF= document.getElementById('tableFilterAssignee')?.value || '';
+
+  let rows = S.tableRows.filter(r => {
+    if (typeF     && r.type     !== typeF)     return false;
+    if (assigneeF && r.assignee !== assigneeF) return false;
+    if (search && !`${r.key} ${r.summary} ${r.assignee} ${r.type} ${r.status} ${r.dept} ${r.projectNumber}`.toLowerCase().includes(search)) return false;
+    return true;
+  });
+
+  const headers = ['Key','Summary','Type','Assignee','Status','Department','Project #','Estimate (h)','Logged (h)','Remaining (h)'];
+  const escape  = v => `"${String(v ?? '').replace(/"/g,'""')}"`;
+  let csv = headers.join(',') + '\n';
+  rows.forEach(r => {
+    csv += [
+      escape(r.key),
+      escape(r.summary),
+      escape(r.type),
+      escape(r.assignee),
+      escape(r.status),
+      escape(r.dept),
+      escape(r.projectNumber),
+      +(secToHours(r.estimate)).toFixed(2),
+      +(secToHours(r.logged)).toFixed(2),
+      +(secToHours(r.remaining)).toFixed(2),
+    ].join(',') + '\n';
+  });
+
+  const blob = new Blob([csv], { type: 'text/csv' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href = url; a.download = 'sprint_issues.csv'; a.click();
+  URL.revokeObjectURL(url);
 }
 
 function sortTable(col) {
