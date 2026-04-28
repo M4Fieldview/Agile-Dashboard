@@ -9,21 +9,93 @@
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
     :root {
-      --blue:    #0052CC;
-      --blue-lt: #2684FF;
-      --bg:      #F4F5F7;
-      --card:    #FFFFFF;
-      --border:  #DFE1E6;
-      --text:    #172B4D;
-      --muted:   #5E6C84;
-      --green:   #36B37E;
-      --orange:  #FF8B00;
-      --red:     #DE350B;
-      --purple:  #6554C0;
-      --teal:    #00B8D9;
-      --radius:  6px;
-      --shadow:  0 1px 3px rgba(0,0,0,.12), 0 1px 2px rgba(0,0,0,.08);
+      --blue:     #0052CC;
+      --blue-lt:  #2684FF;
+      --bg:       #F4F5F7;
+      --card:     #FFFFFF;
+      --input-bg: #FFFFFF;
+      --border:   #DFE1E6;
+      --text:     #172B4D;
+      --muted:    #5E6C84;
+      --green:    #36B37E;
+      --orange:   #FF8B00;
+      --red:      #DE350B;
+      --purple:   #6554C0;
+      --teal:     #00B8D9;
+      --radius:   6px;
+      --shadow:   0 1px 3px rgba(0,0,0,.12), 0 1px 2px rgba(0,0,0,.08);
+      /* note / status badge colours */
+      --note-warn-bg:   #FFFAE6; --note-warn-border: #FFE380; --note-warn-text: #5E4C00;
+      --note-info-bg:   #DEEBFF; --note-info-border: #B3D4FF; --note-info-text: #0747A6;
+      --note-ok-bg:     #E3FCEF; --note-ok-border:   #ABF5D1; --note-ok-text:   #006644;
+      --err-bg:         #FFEBE6; --err-border:        #FFBDAD;
+      --th-hover:       #EBECF0;
+      --tr-hover:       #FAFBFC;
+      --btn-blue-hover: #0747A6;
     }
+
+    /* ── DARK MODE ── */
+    [data-theme="dark"] {
+      --blue:     #4C9AFF;
+      --blue-lt:  #6AADFF;
+      --bg:       #0f1117;
+      --card:     #1a1d2e;
+      --input-bg: #22263a;
+      --border:   #2e3355;
+      --text:     #e1e6f5;
+      --muted:    #7a88aa;
+      --green:    #57d9a3;
+      --orange:   #ffab00;
+      --red:      #ff5630;
+      --purple:   #8777d9;
+      --teal:     #00c7e6;
+      --shadow:   0 2px 6px rgba(0,0,0,.5), 0 1px 3px rgba(0,0,0,.4);
+      --note-warn-bg:   #2d2600; --note-warn-border: #5e4900; --note-warn-text: #ffe073;
+      --note-info-bg:   #0a1f3d; --note-info-border: #1a3f7a; --note-info-text: #8abeff;
+      --note-ok-bg:     #0a2318; --note-ok-border:   #0f4229; --note-ok-text:   #57d9a3;
+      --err-bg:         #2d0e08; --err-border:        #7a2515;
+      --th-hover:       #252842;
+      --tr-hover:       #1f2237;
+      --btn-blue-hover: #1a6ed8;
+    }
+    [data-theme="dark"] body { color-scheme: dark; }
+    /* Inputs, selects, buttons that use hardcoded #fff */
+    [data-theme="dark"] .settings-group input,
+    [data-theme="dark"] .settings-group select,
+    [data-theme="dark"] .sprint-bar-group select,
+    [data-theme="dark"] .preset-btn,
+    [data-theme="dark"] .date-inputs input[type="date"],
+    [data-theme="dark"] .table-filters input,
+    [data-theme="dark"] .table-filters select,
+    [data-theme="dark"] .multi-board-actions button {
+      background: var(--input-bg);
+      color: var(--text);
+      border-color: var(--border);
+    }
+    [data-theme="dark"] #settingsPanel { background: var(--card); }
+    [data-theme="dark"] .settings-note { background: var(--note-warn-bg); border-color: var(--note-warn-border); color: var(--note-warn-text); }
+    [data-theme="dark"] .settings-note[style*="DEEBFF"],
+    [data-theme="dark"] .settings-note[style*="B3D4FF"] { background: var(--note-info-bg) !important; border-color: var(--note-info-border) !important; color: var(--note-info-text) !important; }
+    [data-theme="dark"] #fieldDiscoveryWarn { background: var(--note-warn-bg); border-color: var(--note-warn-border); color: var(--note-warn-text); }
+    [data-theme="dark"] .error-box { background: var(--err-bg); border-color: var(--err-border); }
+    [data-theme="dark"] #modeBadge { background: var(--note-ok-bg) !important; border-color: var(--note-ok-border) !important; color: var(--note-ok-text) !important; }
+    [data-theme="dark"] thead th:hover { background: var(--th-hover); }
+    [data-theme="dark"] tbody tr:hover { background: var(--tr-hover); }
+    [data-theme="dark"] .btn-primary:hover,
+    [data-theme="dark"] .settings-actions .btn:hover { background: var(--btn-blue-hover); }
+    [data-theme="dark"] input[type="date"]::-webkit-calendar-picker-indicator { filter: invert(1); }
+    /* Dark mode toggle button */
+    .theme-toggle {
+      background: rgba(255,255,255,.15);
+      border: none;
+      border-radius: var(--radius);
+      padding: 5px 10px;
+      font-size: 14px;
+      cursor: pointer;
+      line-height: 1;
+      transition: background .15s;
+    }
+    .theme-toggle:hover { background: rgba(255,255,255,.25); }
 
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
@@ -614,6 +686,7 @@
     <button class="btn btn-ghost btn-sm" id="refreshBtn" onclick="refreshDashboard()" title="Refresh data">
       ↻ Refresh
     </button>
+    <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()" title="Toggle dark / light mode">🌙</button>
     <button class="btn btn-ghost btn-sm" onclick="toggleSettings()" title="Settings">
       ⚙ Settings
     </button>
@@ -946,6 +1019,34 @@ const PALETTE = [
   '#8777D9','#00B8D9','#36B37E','#6554C0',
   '#FFAB00','#00C7E6','#ABF5D1','#C0B6F2',
 ];
+
+// ═══════════════════════════════════════════════════════
+//  DARK MODE
+// ═══════════════════════════════════════════════════════
+function applyTheme(dark) {
+  document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
+  document.getElementById('themeToggle').textContent = dark ? '☀️' : '🌙';
+  // Update Chart.js global defaults so new/re-rendered charts pick up the colours
+  const textCol   = dark ? '#7a88aa' : '#5E6C84';
+  const gridCol   = dark ? '#2e3355' : '#E0E0E0';
+  Chart.defaults.color       = textCol;
+  Chart.defaults.borderColor = gridCol;
+  // Re-render all active charts with new colours
+  if (S.processed) applyDateFilter();
+}
+
+function toggleTheme() {
+  const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+  localStorage.setItem('theme', isDark ? 'light' : 'dark');
+  applyTheme(!isDark);
+}
+
+// Apply saved theme immediately (before first paint)
+(function() {
+  const saved = localStorage.getItem('theme') ||
+    (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+  applyTheme(saved === 'dark');
+})();
 
 // ═══════════════════════════════════════════════════════
 //  CONFIG  (localStorage — token stored locally only)
@@ -1407,7 +1508,7 @@ function renderAssigneeChart(d) {
         tooltip: { callbacks: { label: ctx => ` ${ctx.raw}h` } },
       },
       scales: {
-        x: { beginAtZero: true, ticks: { callback: v => `${v}h` }, grid: { color: '#F0F0F0' } },
+        x: { beginAtZero: true, ticks: { callback: v => `${v}h` }, grid: { color: Chart.defaults.borderColor } },
         y: { grid: { display: false }, ticks: { font: { size: 12 } } },
       },
     },
@@ -1470,7 +1571,7 @@ function renderProjectChart(d) {
         tooltip: { callbacks: { label: ctx => ` ${ctx.raw}h` } },
       },
       scales: {
-        x: { beginAtZero: true, ticks: { callback: v => `${v}h` }, grid: { color: '#F0F0F0' } },
+        x: { beginAtZero: true, ticks: { callback: v => `${v}h` }, grid: { color: Chart.defaults.borderColor } },
         y: { grid: { display: false }, ticks: { font: { size: 12 } } },
       },
     },
@@ -1587,7 +1688,7 @@ function renderDeptChart(d) {
         tooltip: { callbacks: { label: ctx => ` ${ctx.raw}h` } },
       },
       scales: {
-        x: { beginAtZero: true, ticks: { callback: v => `${v}h` }, grid: { color: '#F0F0F0' } },
+        x: { beginAtZero: true, ticks: { callback: v => `${v}h` }, grid: { color: Chart.defaults.borderColor } },
         y: { grid: { display: false }, ticks: { font: { size: 12 } } },
       },
     },
