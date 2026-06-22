@@ -2146,7 +2146,13 @@ async function refreshDashboard() {
     const cached = await tryLoadDataJson();
     if (cached?.boards?.length) {
       activateJsonMode(cached);
-      setHeaderStatus(`Cached · ${new Date(cached.fetchedAt).toLocaleTimeString()}`);
+      const fetched = new Date(cached.fetchedAt);
+      const ageMin = Math.max(0, Math.round((Date.now() - fetched.getTime()) / 60000));
+      // No browser credentials → can't pull live; data only updates via the
+      // GitHub Actions cron (~5 min). Tell the user instead of doing nothing.
+      setHeaderStatus(`Data from ${fetched.toLocaleTimeString()} (${ageMin} min old) · auto-updates ~5 min · add credentials in ⚙ for instant`);
+    } else {
+      setHeaderStatus('No data — open ⚙ Settings to connect');
     }
     btn.disabled = false;
     resetAutoRefreshCountdown();
