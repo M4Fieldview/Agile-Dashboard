@@ -476,9 +476,15 @@ def main():
     # ── Fetch the per-team target boards only ─────────────────────────────────
     # Each board is a company-managed team board. The dashboard combines them by
     # default and can split by team. The all-projects JQL sweep stays disabled.
-    TARGET_BOARD_NAMES = ['M4 CAD', 'M4 Field Tech', 'M4 GIS']
+    # Map each board's exact Jira name (naming is inconsistent) to a clean team
+    # label shown in the dashboard's Team selector.
+    TARGET_BOARDS = {
+        'M4CAD board':   'M4 CAD',
+        'M4 Field Tech': 'M4 Field Tech',
+        'M4GIS board':   'M4 GIS',
+    }
 
-    print(f'=== Fetching team boards: {TARGET_BOARD_NAMES} ===', file=sys.stderr)
+    print(f'=== Fetching team boards: {list(TARGET_BOARDS)} ===', file=sys.stderr)
     all_boards = get_all('/rest/agile/1.0/board')
     print(f'Found {len(all_boards)} board(s) via Agile API', file=sys.stderr)
     for b in all_boards:
@@ -486,11 +492,11 @@ def main():
         print(f'  [{b.get("type","?")}] id={b["id"]} name="{b["name"]}" '
               f'project={loc.get("projectKey","?")}', file=sys.stderr)
 
-    # Match in the order requested, keeping each board's name as its team label
-    target_boards = [b for n in TARGET_BOARD_NAMES
+    # Match in the order listed; each matched board carries its clean team label
+    target_boards = [b for n in TARGET_BOARDS
                        for b in all_boards if b.get('name') == n]
     found_names   = {b.get('name') for b in target_boards}
-    missing       = [n for n in TARGET_BOARD_NAMES if n not in found_names]
+    missing       = [n for n in TARGET_BOARDS if n not in found_names]
     if missing:
         print(f'WARNING: target board(s) not found: {missing}', file=sys.stderr)
         print(f'  Available names: {[b.get("name") for b in all_boards]}', file=sys.stderr)
@@ -502,19 +508,14 @@ def main():
     for board in target_boards:
         result = process_board(board)
         if result:
-            # Tag the board with its team name so the UI can split by team
-            result['team'] = board.get('name')
+            # Tag with the clean team label so the UI can split by team
+            result['team'] = TARGET_BOARDS[board['name']]
             output_boards.append(result)
 
     # ── Write output ──────────────────────────────────────────────────────────
     result = {
         'fetchedAt': datetime.now(timezone.utc).isoformat(),
         'boards':    output_boards,
-        # Debug: every board name visible to the Jira account, so target names
-        # can be corrected without digging through Actions logs.
-        'availableBoards': sorted(
-            f'{b.get("name")} [{b.get("type","?")}]' for b in all_boards
-        ),
     }
 
     out_path = os.path.normpath(
