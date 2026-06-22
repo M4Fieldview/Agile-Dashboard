@@ -1986,8 +1986,18 @@ function updateSprintBadge(sprint) {
 async function connectJira() {
   clearError();
   saveConfig();
-  if (!S.config.url || !S.config.email || !S.config.token) {
-    showNote('Please fill in Jira URL, email, and API token.', 'error');
+
+  const hasJira = S.config.url && S.config.email && S.config.token;
+  const hasGh   = S.config.ghToken && S.config.ghRepo && S.config.ghRepo.includes('/');
+
+  // GitHub-only setup: no Jira creds, but a token + repo for on-demand refresh.
+  if (!hasJira) {
+    if (hasGh) {
+      showNote('✓ Saved. GitHub refresh is configured — use ↻ Refresh to pull fresh data on demand.', 'success');
+      setHeaderStatus('GitHub refresh configured');
+      return;
+    }
+    showNote('Enter Jira URL + email + token for direct access, OR a GitHub Token + Repo (owner/repo) for on-demand refresh.', 'error');
     return;
   }
   const btn = document.getElementById('connectBtn');
