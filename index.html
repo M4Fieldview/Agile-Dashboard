@@ -1050,6 +1050,7 @@ const S = {
   charts: {},
   teamSel: '__all__',   // '__all__' = combined, else a board id (single team)
   activeView: 'dashboard', // 'dashboard' | 'kanban'
+  activeBoards: [],     // boards currently loaded (for Kanban column layout)
 };
 
 // ═══════════════════════════════════════════════════════
@@ -2516,6 +2517,7 @@ function applyTeamSelection() {
 // deduped by key and worklogs by Jira worklog ID so a ticket never double-counts.
 function loadTeams(boards, label) {
   clearError();
+  S.activeBoards = boards;   // for the Kanban column layout
   const issueMap = {};
   boards.forEach(board => {
     combineAllSprintIssues(board).forEach(issue => {
@@ -2599,38 +2601,61 @@ function renderKanban() {
     return true;
   });
 
-  // Group by status name, ordering columns by status category (To Do → In Progress → Done)
-  const catOrder = { new: 0, indeterminate: 1, done: 2 };
-  const cols = {};   // statusName -> { cat, issues: [] }
-  issues.forEach(i => {
-    const name = i.fields?.status?.name || 'No Status';
-    const cat  = i.fields?.status?.statusCategory?.key || 'new';
-    if (!cols[name]) cols[name] = { cat, issues: [] };
-    cols[name].issues.push(i);
-  });
-
-  const ordered = Object.entries(cols).sort((a, b) => {
-    const c = (catOrder[a[1].cat] ?? 1) - (catOrder[b[1].cat] ?? 1);
-    return c !== 0 ? c : a[0].localeCompare(b[0]);
-  });
-
   document.getElementById('kanbanCount').textContent =
     `${issues.length} ticket${issues.length === 1 ? '' : 's'}` +
     (jobFilter !== '__all__' ? ` · job ${jobFilter}` : '');
 
-  if (!ordered.length) {
-    board.innerHTML = `<div class="kanban-empty" style="width:100%">No tickets match the current filter.</div>`;
+  // Build the column layout from the boards' actual Kanban configuration so
+  // every column shows (even empty ones), in board order. Merge across the
+  // selected teams: union of column names (first-seen order) + a combined
+  // statusId → column map.
+  const orderedNames = [];
+  const statusToCol  = {};   // statusId -> columnName
+  (S.activeBoards || []).forEach(b => {
+    (b.columns || []).forEach(col => {
+      if (!orderedNames.includes(col.name)) orderedNames.push(col.name);
+      (col.statusIds || []).forEach(sid => { statusToCol[sid] = col.name; });
+    });
+  });
+
+  // Buckets for each column, plus a catch-all for statuses not mapped anywhere
+  const buckets = {};
+  orderedNames.forEach(n => { buckets[n] = []; });
+  const catOrder = { new: 0, indeterminate: 1, done: 2 };
+
+  issues.forEach(i => {
+    const sid  = i.fields?.status?.id;
+    let colName = statusToCol[sid];
+    if (!colName) {
+      // No board config (or unmapped status) — fall back to the status name
+      colName = i.fields?.status?.name || 'No Status';
+      if (!(colName in buckets)) { buckets[colName] = []; orderedNames.push(colName); }
+    }
+    buckets[colName].push(i);
+  });
+
+  // If we have no column config at all, order the fallback columns by category
+  if (!(S.activeBoards || []).some(b => (b.columns || []).length)) {
+    orderedNames.sort((a, b) => {
+      const ca = catOrder[(buckets[a][0]?.fields?.status?.statusCategory?.key)] ?? 1;
+      const cb = catOrder[(buckets[b][0]?.fields?.status?.statusCategory?.key)] ?? 1;
+      return ca - cb || a.localeCompare(b);
+    });
+  }
+
+  if (!orderedNames.length) {
+    board.innerHTML = `<div class="kanban-empty" style="width:100%">No columns to display.</div>`;
     return;
   }
 
-  board.innerHTML = ordered.map(([name, col]) => `
+  board.innerHTML = orderedNames.map(name => `
     <div class="kanban-col">
       <div class="kanban-col-head">
         <span>${escapeHtml(name)}</span>
-        <span class="kanban-col-count">${col.issues.length}</span>
+        <span class="kanban-col-count">${buckets[name].length}</span>
       </div>
       <div class="kanban-cards">
-        ${col.issues.map(renderKanbanCard).join('') || '<div class="kanban-empty">—</div>'}
+        ${buckets[name].map(renderKanbanCard).join('') || '<div class="kanban-empty">—</div>'}
       </div>
     </div>
   `).join('');

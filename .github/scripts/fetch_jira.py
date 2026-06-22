@@ -152,6 +152,24 @@ def find_field(field_map, *names):
     return None
 
 
+def get_board_columns(board_id):
+    """Return the board's ordered Kanban columns: [{'name', 'statusIds':[...]}].
+    Empty list if the configuration can't be read."""
+    try:
+        cfg = get(f'/rest/agile/1.0/board/{board_id}/configuration')
+        cols = (cfg.get('columnConfig') or {}).get('columns') or []
+        out = []
+        for c in cols:
+            out.append({
+                'name':      c.get('name', ''),
+                'statusIds': [str(s.get('id')) for s in (c.get('statuses') or []) if s.get('id')],
+            })
+        return out
+    except Exception as e:
+        print(f'  Could not fetch board {board_id} columns: {e}', file=sys.stderr)
+        return []
+
+
 def extract_dept_value(raw):
     """Normalise a Jira custom field value to a plain string (or list of strings)."""
     if raw is None:
@@ -188,6 +206,7 @@ def slim_issue(issue):
                 'iconUrl': issuetype.get('iconUrl', ''),
             },
             'status': {
+                'id':   str(status.get('id', '')),
                 'name': status.get('name', ''),
                 'statusCategory': {'key': status_cat.get('key', 'new')},
             },
@@ -508,6 +527,8 @@ def main():
         if result:
             # Tag with the clean team label so the UI can split by team
             result['team'] = TARGET_BOARDS[board['name']]
+            # Full ordered column list so the Kanban tab can show every column
+            result['columns'] = get_board_columns(board['id'])
             output_boards.append(result)
 
     # ── Write output ──────────────────────────────────────────────────────────
