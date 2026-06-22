@@ -241,6 +241,123 @@
     .auto-refresh-label { font-size: 12px; color: var(--muted); display: flex; align-items: center; gap: 5px; cursor: pointer; }
     .auto-refresh-label input { cursor: pointer; }
 
+    /* ── TAB BAR ── */
+    .tab-bar {
+      background: var(--card);
+      border-bottom: 1px solid var(--border);
+      padding: 0 20px;
+      display: flex;
+      gap: 4px;
+    }
+    .tab-btn {
+      cursor: pointer;
+      border: none;
+      background: transparent;
+      padding: 11px 16px;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--muted);
+      border-bottom: 3px solid transparent;
+      transition: color .15s, border-color .15s;
+      margin-bottom: -1px;
+    }
+    .tab-btn:hover { color: var(--blue); }
+    .tab-btn.active { color: var(--blue); border-bottom-color: var(--blue); }
+
+    /* ── KANBAN ── */
+    .kanban-bar {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-bottom: 16px;
+    }
+    .kanban-bar label { font-size: 12px; font-weight: 600; color: var(--muted); white-space: nowrap; }
+    .kanban-bar select, .kanban-bar input {
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 6px 10px;
+      font-size: 13px;
+      background: var(--input-bg);
+      color: var(--text);
+      outline: none;
+    }
+    .kanban-bar .spacer { flex: 1; }
+    .kanban-board {
+      display: flex;
+      gap: 14px;
+      overflow-x: auto;
+      align-items: flex-start;
+      padding-bottom: 8px;
+    }
+    .kanban-col {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      min-width: 280px;
+      max-width: 320px;
+      flex: 1 0 280px;
+      display: flex;
+      flex-direction: column;
+      max-height: 75vh;
+    }
+    .kanban-col-head {
+      padding: 10px 14px;
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .04em;
+      color: var(--muted);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      position: sticky;
+      top: 0;
+      background: var(--bg);
+    }
+    .kanban-col-count {
+      background: var(--border);
+      color: var(--text);
+      border-radius: 10px;
+      padding: 1px 8px;
+      font-size: 11px;
+      font-weight: 600;
+    }
+    .kanban-cards { padding: 10px; display: flex; flex-direction: column; gap: 10px; overflow-y: auto; }
+    .kanban-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 10px 12px;
+      box-shadow: var(--shadow);
+      display: flex;
+      flex-direction: column;
+      gap: 7px;
+    }
+    .kanban-card-summary { font-size: 13px; color: var(--text); line-height: 1.35; }
+    .kanban-card-meta { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+    .kanban-card-left { display: flex; align-items: center; gap: 6px; min-width: 0; }
+    .kanban-key {
+      font-family: monospace;
+      font-size: 11px;
+      color: var(--blue);
+      text-decoration: none;
+      white-space: nowrap;
+    }
+    .kanban-key:hover { text-decoration: underline; }
+    .kanban-job {
+      font-size: 10px;
+      font-weight: 700;
+      background: var(--note-info-bg);
+      color: var(--note-info-text);
+      border: 1px solid var(--note-info-border);
+      border-radius: 3px;
+      padding: 1px 6px;
+      white-space: nowrap;
+    }
+    .kanban-empty { padding: 20px; text-align: center; color: var(--muted); font-size: 12px; }
+
     /* ── DATE FILTER BAR ── */
     .date-bar {
       background: var(--card);
@@ -688,6 +805,12 @@
 <!-- hidden board select kept for JSON-mode compatibility -->
 <select id="boardSelect" onchange="onBoardChange()" style="display:none"></select>
 
+<!-- ══════════════════════ TAB BAR ══════════════════════ -->
+<div class="tab-bar">
+  <button class="tab-btn active" id="tabDashboard" onclick="switchView('dashboard')">Dashboard</button>
+  <button class="tab-btn" id="tabKanban" onclick="switchView('kanban')">Kanban Board</button>
+</div>
+
 <!-- ══════════════════════ SPRINT BAR ══════════════════════ -->
 <div class="sprint-bar" id="singleBoardBar">
   <div class="sprint-bar-group">
@@ -868,6 +991,20 @@
     </div>
 
   </div><!-- /dashboardContent -->
+
+  <!-- KANBAN CONTENT -->
+  <div id="kanbanContent" style="display:none">
+    <div class="kanban-bar">
+      <label for="kanbanJobFilter">Job&nbsp;#</label>
+      <select id="kanbanJobFilter" onchange="renderKanban()">
+        <option value="__all__">All job numbers</option>
+      </select>
+      <input type="text" id="kanbanSearch" placeholder="Search tickets…" oninput="renderKanban()" style="min-width:200px" />
+      <span class="spacer"></span>
+      <span id="kanbanCount" style="font-size:12px;color:var(--muted)"></span>
+    </div>
+    <div class="kanban-board" id="kanbanBoard"></div>
+  </div><!-- /kanbanContent -->
 </main>
 
 <!-- ══════════════════════ CHART EXPAND MODAL ══════════════════════ -->
@@ -912,6 +1049,7 @@ const S = {
   autoCountdown: null,
   charts: {},
   teamSel: '__all__',   // '__all__' = combined, else a board id (single team)
+  activeView: 'dashboard', // 'dashboard' | 'kanban'
 };
 
 // ═══════════════════════════════════════════════════════
@@ -2400,9 +2538,135 @@ function loadTeams(boards, label) {
   S.dateTo    = null;
   renderAllWithDateFilter();
 
+  // Keep the Kanban tab in sync with the current team selection
+  populateJobFilter();
+  renderKanban();
+
   const fetched = new Date(S.jsonData.fetchedAt);
   const teamCount = boards.length;
   setHeaderStatus(`${label}${teamCount > 1 ? ` (${teamCount} teams)` : ''} · refreshed ${fetched.toLocaleTimeString()}`);
+}
+
+// ═══════════════════════════════════════════════════════
+//  TABS  (Dashboard / Kanban)
+// ═══════════════════════════════════════════════════════
+function switchView(view) {
+  S.activeView = view;
+  const isKanban = view === 'kanban';
+  document.getElementById('tabDashboard').classList.toggle('active', !isKanban);
+  document.getElementById('tabKanban').classList.toggle('active', isKanban);
+  document.getElementById('dashboardContent').style.display = isKanban ? 'none' : '';
+  document.getElementById('kanbanContent').style.display    = isKanban ? '' : 'none';
+  // The date range only applies to the time-tracking dashboard
+  document.getElementById('dateBar').style.display = isKanban ? 'none' : '';
+  if (isKanban) { populateJobFilter(); renderKanban(); }
+}
+
+// ═══════════════════════════════════════════════════════
+//  KANBAN BOARD
+// ═══════════════════════════════════════════════════════
+function jobNumberOf(issue) {
+  const p = issue.fields?.projectNumber;
+  if (p === null || p === undefined || p === '') return '';
+  return Array.isArray(p) ? p.filter(Boolean).join(', ') : String(p);
+}
+
+function populateJobFilter() {
+  const sel = document.getElementById('kanbanJobFilter');
+  if (!sel) return;
+  const prev = sel.value;
+  const jobs = [...new Set((S.issues || []).map(jobNumberOf).filter(Boolean))]
+    .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+  sel.innerHTML = '<option value="__all__">All job numbers</option>' +
+    jobs.map(j => `<option value="${j}">${j}</option>`).join('');
+  // Preserve selection if still present
+  sel.value = jobs.includes(prev) || prev === '__all__' ? prev : '__all__';
+}
+
+function renderKanban() {
+  const board = document.getElementById('kanbanBoard');
+  if (!board) return;
+
+  const jobFilter = document.getElementById('kanbanJobFilter')?.value || '__all__';
+  const search    = (document.getElementById('kanbanSearch')?.value || '').toLowerCase();
+
+  let issues = (S.issues || []).filter(i => {
+    if (jobFilter !== '__all__' && jobNumberOf(i) !== jobFilter) return false;
+    if (search) {
+      const hay = `${i.key} ${i.fields?.summary || ''} ${i.fields?.assignee?.displayName || ''} ${jobNumberOf(i)}`.toLowerCase();
+      if (!hay.includes(search)) return false;
+    }
+    return true;
+  });
+
+  // Group by status name, ordering columns by status category (To Do → In Progress → Done)
+  const catOrder = { new: 0, indeterminate: 1, done: 2 };
+  const cols = {};   // statusName -> { cat, issues: [] }
+  issues.forEach(i => {
+    const name = i.fields?.status?.name || 'No Status';
+    const cat  = i.fields?.status?.statusCategory?.key || 'new';
+    if (!cols[name]) cols[name] = { cat, issues: [] };
+    cols[name].issues.push(i);
+  });
+
+  const ordered = Object.entries(cols).sort((a, b) => {
+    const c = (catOrder[a[1].cat] ?? 1) - (catOrder[b[1].cat] ?? 1);
+    return c !== 0 ? c : a[0].localeCompare(b[0]);
+  });
+
+  document.getElementById('kanbanCount').textContent =
+    `${issues.length} ticket${issues.length === 1 ? '' : 's'}` +
+    (jobFilter !== '__all__' ? ` · job ${jobFilter}` : '');
+
+  if (!ordered.length) {
+    board.innerHTML = `<div class="kanban-empty" style="width:100%">No tickets match the current filter.</div>`;
+    return;
+  }
+
+  board.innerHTML = ordered.map(([name, col]) => `
+    <div class="kanban-col">
+      <div class="kanban-col-head">
+        <span>${escapeHtml(name)}</span>
+        <span class="kanban-col-count">${col.issues.length}</span>
+      </div>
+      <div class="kanban-cards">
+        ${col.issues.map(renderKanbanCard).join('') || '<div class="kanban-empty">—</div>'}
+      </div>
+    </div>
+  `).join('');
+}
+
+function renderKanbanCard(issue) {
+  const f       = issue.fields || {};
+  const job     = jobNumberOf(issue);
+  const url     = `${S.config?.url || ''}/browse/${issue.key}`;
+  const typeIco = f.issuetype?.iconUrl ? `<img src="${f.issuetype.iconUrl}" width="12" height="12" alt="" />` : '';
+  const assignee = f.assignee?.displayName || 'Unassigned';
+  const avatar   = f.assignee?.avatarUrls?.['24x24']
+    ? `<div class="avatar" style="width:20px;height:20px;font-size:9px"><img src="${f.assignee.avatarUrls['24x24']}" alt=""/></div>`
+    : `<div class="avatar" style="width:20px;height:20px;font-size:9px">${assignee.charAt(0).toUpperCase()}</div>`;
+  const secs    = (issue.worklogs || []).reduce((s, w) => s + (w.timeSpentSeconds || 0), 0);
+  const logged  = secs > 0 ? `<span class="time-val" style="font-size:11px">${fmtSecs(secs)}</span>` : '';
+
+  return `
+    <div class="kanban-card">
+      <div class="kanban-card-summary">${escapeHtml(f.summary || '')}</div>
+      <div class="kanban-card-meta">
+        <div class="kanban-card-left">
+          <span class="type-badge" style="padding:1px 5px">${typeIco}</span>
+          <a class="kanban-key" href="${url}" target="_blank">${issue.key}</a>
+        </div>
+        ${job ? `<span class="kanban-job">${escapeHtml(job)}</span>` : ''}
+      </div>
+      <div class="kanban-card-meta">
+        <div class="kanban-card-left">${avatar}<span style="font-size:11px;color:var(--muted)">${escapeHtml(assignee)}</span></div>
+        ${logged}
+      </div>
+    </div>`;
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
 }
 
 function checkFieldDiscovery(jsonData) {
