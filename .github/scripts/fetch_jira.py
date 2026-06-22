@@ -473,8 +473,12 @@ def main():
     print(f'PROJECT_NUMBER_FIELD: {PROJECT_NUMBER_FIELD}', file=sys.stderr)
     print(f'ISSUE_FIELDS: {ISSUE_FIELDS}', file=sys.stderr)
 
-    # ── Pass 1: Agile boards ─────────────────────────────────────────────────
-    print('=== Pass 1: Agile boards ===', file=sys.stderr)
+    # ── Fetch the single target board only ───────────────────────────────────
+    # The dashboard is locked to one board. Only this board is fetched; the
+    # all-projects JQL sweep is intentionally disabled.
+    TARGET_BOARD_NAME = 'M4 Agile Board'
+
+    print(f'=== Fetching board "{TARGET_BOARD_NAME}" ===', file=sys.stderr)
     all_boards = get_all('/rest/agile/1.0/board')
     print(f'Found {len(all_boards)} board(s) via Agile API', file=sys.stderr)
     for b in all_boards:
@@ -482,85 +486,17 @@ def main():
         print(f'  [{b.get("type","?")}] id={b["id"]} name="{b["name"]}" '
               f'project={loc.get("projectKey","?")}', file=sys.stderr)
 
-    output_boards = []
-    seen_project_keys = set()
+    target_boards = [b for b in all_boards if b.get('name') == TARGET_BOARD_NAME]
+    if not target_boards:
+        print(f'ERROR: No board named "{TARGET_BOARD_NAME}" found. '
+              f'Available names: {[b.get("name") for b in all_boards]}', file=sys.stderr)
+        sys.exit(1)
 
-    for board in all_boards:
+    output_boards = []
+    for board in target_boards:
         result = process_board(board)
         if result:
             output_boards.append(result)
-            # Track which project keys are covered
-            loc = board.get('location') or {}
-            pk  = loc.get('projectKey') or loc.get('projectId')
-            if pk:
-                seen_project_keys.add(str(pk))
-
-    # ── Pass 2: All projects with recent worklogs (single JQL sweep) ────────────
-    print('\n=== Pass 2: JQL sweep for all recently active projects ===', file=sys.stderr)
-    print(f'  Skipping project keys already covered by boards: {seen_project_keys}', file=sys.stderr)
-    try:
-        cutoff = (datetime.now(timezone.utc) - timedelta(days=RECENT_DAYS)).strftime('%Y-%m-%d')
-        jql = f'worklogDate >= "{cutoff}" ORDER BY project ASC, key ASC'
-        print(f'JQL: {jql}', file=sys.stderr)
-
-        all_recent_issues = get_all('/rest/api/3/search/jql', {'jql': jql, 'fields': ISSUE_FIELDS}, item_key='issues')
-        print(f'Found {len(all_recent_issues)} issues with recent worklogs across all projects', file=sys.stderr)
-
-        # Group issues by project key — skip any project already covered by a board
-        # (scrum OR kanban) so we never create duplicate entries
-        by_project = {}
-        for issue in all_recent_issues:
-            pk = issue['key'].split('-')[0]
-            if pk not in seen_project_keys:
-                by_project.setdefault(pk, []).append(issue)
-
-        print(f'Projects NOT already covered by scrum boards: {list(by_project.keys())}', file=sys.stderr)
-
-        for proj_key, issues in by_project.items():
-            print(f'\nProject: {proj_key} ({len(issues)} issues with recent worklogs)', file=sys.stderr)
-            # Attach worklogs
-            attach_worklogs(issues)
-            # Bucket into 2-week windows
-            windows = build_time_windows(RECENT_DAYS)
-            output_sprints = []
-            for label, start_d, end_d in windows:
-                window_issues = [
-                    slim_issue(i) for i in issues
-                    if any(
-                        start_d <= wl.get('started', '')[:10] <= end_d
-                        for wl in (i.get('worklogs') or [])
-                    )
-                ]
-                if window_issues:
-                    output_sprints.append({
-                        'id':        f'{proj_key}_{start_d}',
-                        'name':      label,
-                        'state':     'active' if label == windows[0][0] else 'closed',
-                        'startDate': start_d + 'T00:00:00.000Z',
-                        'endDate':   end_d   + 'T23:59:59.000Z',
-                        'goal':      '',
-                        'issues':    window_issues,
-                    })
-            if output_sprints:
-                output_boards.append({
-                    'id':      proj_key,
-                    'name':    proj_key,  # will be enriched below
-                    'type':    'project',
-                    'sprints': output_sprints,
-                })
-
-        # Enrich project names from the projects API
-        try:
-            all_projects = fetch_all_projects()
-            proj_name_map = {p['key']: p['name'] for p in all_projects}
-            for board in output_boards:
-                if board['type'] == 'project' and board['id'] in proj_name_map:
-                    board['name'] = proj_name_map[board['id']]
-        except Exception as e:
-            print(f'Warning: could not enrich project names: {e}', file=sys.stderr)
-
-    except Exception as e:
-        print(f'Warning: JQL sweep failed: {e}', file=sys.stderr)
 
     # ── Write output ──────────────────────────────────────────────────────────
     result = {
