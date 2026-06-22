@@ -359,7 +359,15 @@ def process_kanban_board(board_id, board_name, board_type):
 
     with_data = sum(1 for s in output_sprints if s['issues'])
     print(f'  {len(output_sprints)} windows ({with_data} with worklog data).', file=sys.stderr)
-    return {'id': board_id, 'name': board_name, 'type': board_type, 'sprints': output_sprints}
+    return {
+        'id': board_id, 'name': board_name, 'type': board_type, 'sprints': output_sprints,
+        # Debug: how many issues the board returned vs. how many had worklogs
+        '_debug': {
+            'rawIssues':      len(issues),
+            'withAnyWorklog': sum(1 for i in issues if i.get('worklogs')),
+            'sampleKeys':     [i.get('key') for i in issues[:8]],
+        },
+    }
 
 
 def _empty_board(board_id, board_name, board_type):
