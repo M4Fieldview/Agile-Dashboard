@@ -473,12 +473,12 @@ def main():
     print(f'PROJECT_NUMBER_FIELD: {PROJECT_NUMBER_FIELD}', file=sys.stderr)
     print(f'ISSUE_FIELDS: {ISSUE_FIELDS}', file=sys.stderr)
 
-    # ── Fetch the single target board only ───────────────────────────────────
-    # The dashboard is locked to one board. Only this board is fetched; the
-    # all-projects JQL sweep is intentionally disabled.
-    TARGET_BOARD_NAME = 'M4 Agile Board'
+    # ── Fetch the per-team target boards only ─────────────────────────────────
+    # Each board is a company-managed team board. The dashboard combines them by
+    # default and can split by team. The all-projects JQL sweep stays disabled.
+    TARGET_BOARD_NAMES = ['M4 CAD', 'M4 Field Tech', 'M4 GIS']
 
-    print(f'=== Fetching board "{TARGET_BOARD_NAME}" ===', file=sys.stderr)
+    print(f'=== Fetching team boards: {TARGET_BOARD_NAMES} ===', file=sys.stderr)
     all_boards = get_all('/rest/agile/1.0/board')
     print(f'Found {len(all_boards)} board(s) via Agile API', file=sys.stderr)
     for b in all_boards:
@@ -486,16 +486,24 @@ def main():
         print(f'  [{b.get("type","?")}] id={b["id"]} name="{b["name"]}" '
               f'project={loc.get("projectKey","?")}', file=sys.stderr)
 
-    target_boards = [b for b in all_boards if b.get('name') == TARGET_BOARD_NAME]
+    # Match in the order requested, keeping each board's name as its team label
+    target_boards = [b for n in TARGET_BOARD_NAMES
+                       for b in all_boards if b.get('name') == n]
+    found_names   = {b.get('name') for b in target_boards}
+    missing       = [n for n in TARGET_BOARD_NAMES if n not in found_names]
+    if missing:
+        print(f'WARNING: target board(s) not found: {missing}', file=sys.stderr)
+        print(f'  Available names: {[b.get("name") for b in all_boards]}', file=sys.stderr)
     if not target_boards:
-        print(f'ERROR: No board named "{TARGET_BOARD_NAME}" found. '
-              f'Available names: {[b.get("name") for b in all_boards]}', file=sys.stderr)
+        print('ERROR: none of the target team boards were found.', file=sys.stderr)
         sys.exit(1)
 
     output_boards = []
     for board in target_boards:
         result = process_board(board)
         if result:
+            # Tag the board with its team name so the UI can split by team
+            result['team'] = board.get('name')
             output_boards.append(result)
 
     # ── Write output ──────────────────────────────────────────────────────────

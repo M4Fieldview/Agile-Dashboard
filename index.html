@@ -691,7 +691,10 @@
 <!-- ══════════════════════ SPRINT BAR ══════════════════════ -->
 <div class="sprint-bar" id="singleBoardBar">
   <div class="sprint-bar-group">
-    <label id="boardNameLabel">M4 Agile Board</label>
+    <label for="teamSelect">Team</label>
+    <select id="teamSelect" onchange="onTeamChange()" disabled>
+      <option value="__all__">All Teams (combined)</option>
+    </select>
   </div>
   <div id="modeBadge" style="display:none;background:#E3FCEF;border:1px solid #ABF5D1;border-radius:4px;padding:3px 10px;font-size:12px;color:#006644;"></div>
   <div class="sprint-bar-spacer"></div>
@@ -908,6 +911,7 @@ const S = {
   autoTimer: null,
   autoCountdown: null,
   charts: {},
+  teamSel: '__all__',   // '__all__' = combined, else a board id (single team)
 };
 
 // ═══════════════════════════════════════════════════════
@@ -2126,29 +2130,81 @@ async function tryLoadDataJson() {
 function activateJsonMode(jsonData) {
   S.mode    = 'json';
   S.jsonData = jsonData;
-  S.boards  = jsonData.boards.map(b => ({ id: b.id, name: b.name, type: b.type }));
+  S.boards  = jsonData.boards.map(b => ({ id: b.id, name: b.name, type: b.type, team: b.team || b.name }));
 
+  // Hidden board select kept for API-mode compatibility
   const boardSel = document.getElementById('boardSelect');
   boardSel.innerHTML = S.boards
     .map(b => `<option value="${b.id}">${b.name}</option>`).join('');
+
+  // Team selector: "All Teams (combined)" + one option per board
+  const teamSel = document.getElementById('teamSelect');
+  teamSel.innerHTML = '<option value="__all__">All Teams (combined)</option>' +
+    S.boards.map(b => `<option value="${b.id}">${b.team}</option>`).join('');
+  teamSel.disabled = false;
+  // Preserve current selection across refreshes if still valid, else default to combined
+  const wanted = S.teamSel && (S.teamSel === '__all__' || S.boards.some(b => String(b.id) === S.teamSel))
+    ? S.teamSel : '__all__';
+  teamSel.value = wanted;
+  S.teamSel = wanted;
 
   const fetched = new Date(jsonData.fetchedAt);
   const badge = document.getElementById('modeBadge');
   badge.textContent = `⚡ Auto-refreshed · ${fetched.toLocaleTimeString()}`;
   badge.style.display = '';
 
-  // Dashboard is locked to a single board — load the first (and only) board.
-  const defaultBoard = (jsonData.boards || [])[0];
-  if (defaultBoard) {
-    S.boardId = String(defaultBoard.id);
-    boardSel.value = S.boardId;
-    const lbl = document.getElementById('boardNameLabel');
-    if (lbl) lbl.textContent = defaultBoard.name;
-    loadBoardFromJson(S.boardId);
-  }
+  applyTeamSelection();
 
   // Warn if project number field wasn't discovered
   checkFieldDiscovery(jsonData);
+}
+
+function onTeamChange() {
+  S.teamSel = document.getElementById('teamSelect').value;
+  applyTeamSelection();
+}
+
+function applyTeamSelection() {
+  const boards = S.jsonData?.boards || [];
+  if (!boards.length) return;
+  if (S.teamSel === '__all__') {
+    loadTeams(boards, 'All Teams');
+  } else {
+    const board = boards.find(b => String(b.id) === String(S.teamSel));
+    if (board) loadTeams([board], board.team || board.name);
+    else loadTeams(boards, 'All Teams');
+  }
+}
+
+// Merge issues across one or more team boards into the dashboard. Issues are
+// deduped by key and worklogs by Jira worklog ID so a ticket never double-counts.
+function loadTeams(boards, label) {
+  clearError();
+  const issueMap = {};
+  boards.forEach(board => {
+    combineAllSprintIssues(board).forEach(issue => {
+      if (!issueMap[issue.key]) issueMap[issue.key] = { ...issue, worklogs: [] };
+      const seen = new Set(issueMap[issue.key].worklogs.map(w => w.id || `${w.started}|${w.author?.displayName}`));
+      (issue.worklogs || []).forEach(wl => {
+        const k = wl.id || `${wl.started}|${wl.author?.displayName}`;
+        if (!seen.has(k)) { issueMap[issue.key].worklogs.push(wl); seen.add(k); }
+      });
+    });
+  });
+
+  S.issues   = Object.values(issueMap);
+  S.worklogs = {};
+  S.issues.forEach(issue => { S.worklogs[issue.key] = issue.worklogs || []; });
+  S.sprintInfo = { name: label, state: 'active' };
+
+  S.processed = processData(S.issues, S.worklogs, S.sprintInfo);
+  S.dateFrom  = null;
+  S.dateTo    = null;
+  renderAllWithDateFilter();
+
+  const fetched = new Date(S.jsonData.fetchedAt);
+  const teamCount = boards.length;
+  setHeaderStatus(`${label}${teamCount > 1 ? ` (${teamCount} teams)` : ''} · refreshed ${fetched.toLocaleTimeString()}`);
 }
 
 function checkFieldDiscovery(jsonData) {
@@ -2198,20 +2254,7 @@ function combineAllSprintIssues(board) {
 function loadBoardFromJson(boardId) {
   const board = (S.jsonData.boards || []).find(b => String(b.id) === String(boardId));
   if (!board) return;
-
-  clearError();
-  S.issues   = combineAllSprintIssues(board);
-  S.worklogs = {};
-  S.issues.forEach(issue => { S.worklogs[issue.key] = issue.worklogs || []; });
-  S.sprintInfo = { name: board.name, state: 'active' };
-
-  S.processed = processData(S.issues, S.worklogs, S.sprintInfo);
-  S.dateFrom  = null;
-  S.dateTo    = null;
-  renderAllWithDateFilter();
-
-  const fetched = new Date(S.jsonData.fetchedAt);
-  setHeaderStatus(`Data refreshed ${fetched.toLocaleTimeString()}`);
+  loadTeams([board], board.team || board.name);
 }
 
 // ═══════════════════════════════════════════════════════
