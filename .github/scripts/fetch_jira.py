@@ -463,9 +463,9 @@ def main():
     # ── Set custom field IDs (project-scoped, discovered from GT-1259) ─────────
     # These are project-scoped fields in the GIS Tasks / GT project and do NOT
     # appear in the global /rest/api/3/field endpoint, so name-based discovery
-    # always missed them. Hardcoded after inspecting GT-1259 with fields=*all.
-    SUPPORTED_DEPT_FIELD = 'customfield_10397'   # "LU Construction", "M4", etc.
-    PROJECT_NUMBER_FIELD = 'customfield_10463'   # "2545", "1234", etc.
+    # always missed them. Confirmed by dumping M4FT-2 / M4GIS-5 with fields=*all.
+    SUPPORTED_DEPT_FIELD = 'customfield_10565'   # "LU Construction", "LU Canada"
+    PROJECT_NUMBER_FIELD = 'customfield_10564'   # job number, e.g. "123", "456"
     ISSUE_FIELDS = _base_issue_fields()
     print(f'SUPPORTED_DEPT_FIELD: {SUPPORTED_DEPT_FIELD}', file=sys.stderr)
     print(f'PROJECT_NUMBER_FIELD: {PROJECT_NUMBER_FIELD}', file=sys.stderr)
@@ -510,31 +510,10 @@ def main():
             result['team'] = TARGET_BOARDS[board['name']]
             output_boards.append(result)
 
-    # ── Job-number field discovery (temporary diagnostic) ─────────────────────
-    # projectNumber is null on the M4 projects, so find the right field. Dump:
-    #  - global custom fields whose name hints at job/project/number
-    #  - all non-null fields of one sample ticket per board
-    field_debug = {}
-    try:
-        field_map = discover_fields()  # {name.lower(): id}
-        hints = {n: fid for n, fid in field_map.items()
-                 if any(h in n for h in ('job', 'project', 'number', 'wo', 'work order', 'contract'))}
-        field_debug['candidateFields'] = hints
-        samples = {}
-        for b in output_boards:
-            issues = (b.get('sprints') or [{}])[0].get('issues') or []
-            if issues:
-                key = issues[0]['key']
-                samples[key] = get_sample_issue_fields(key)
-        field_debug['sampleIssues'] = samples
-    except Exception as e:
-        field_debug['error'] = str(e)
-
     # ── Write output ──────────────────────────────────────────────────────────
     result = {
-        'fetchedAt':  datetime.now(timezone.utc).isoformat(),
-        'boards':     output_boards,
-        'fieldDebug': field_debug,
+        'fetchedAt': datetime.now(timezone.utc).isoformat(),
+        'boards':    output_boards,
     }
 
     out_path = os.path.normpath(
