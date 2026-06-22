@@ -510,6 +510,11 @@ def main():
     result = {
         'fetchedAt': datetime.now(timezone.utc).isoformat(),
         'boards':    output_boards,
+        # Debug: every board name visible to the Jira account, so target names
+        # can be corrected without digging through Actions logs.
+        'availableBoards': sorted(
+            f'{b.get("name")} [{b.get("type","?")}]' for b in all_boards
+        ),
     }
 
     out_path = os.path.normpath(
