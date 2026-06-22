@@ -1083,6 +1083,129 @@ async function loadAllWorklogs(issues) {
 }
 
 // ═══════════════════════════════════════════════════════
+//  LIVE DIRECT-API FETCH (mirrors .github/scripts/fetch_jira.py)
+//  Builds the same structure as data.json so activateJsonMode() can
+//  consume it directly — used by Refresh for a near-instant update
+//  when the browser can reach Jira directly (falls back to Actions).
+// ═══════════════════════════════════════════════════════
+const LIVE_TEAM_BOARDS = {       // exact Jira board name → clean team label
+  'M4CAD board':   'M4 CAD',
+  'M4 Field Tech': 'M4 Field Tech',
+  'M4GIS board':   'M4 GIS',
+};
+const LIVE_DEPT_FIELD = 'customfield_10397';   // Supported Department
+const LIVE_PROJ_FIELD = 'customfield_10463';   // Project Number
+const LIVE_RECENT_DAYS = 90;
+const LIVE_WORKLOG_CONCURRENCY = 10;
+
+function liveExtractField(raw) {
+  if (raw === null || raw === undefined) return null;
+  if (Array.isArray(raw)) return raw.map(liveExtractField).filter(v => v != null);
+  if (typeof raw === 'object') return raw.value || raw.name || raw.displayName || null;
+  return String(raw);
+}
+
+// Fetch worklogs for many issues with a concurrency cap
+async function liveFetchWorklogs(issues) {
+  const out = {};
+  for (let i = 0; i < issues.length; i += LIVE_WORKLOG_CONCURRENCY) {
+    const batch = issues.slice(i, i + LIVE_WORKLOG_CONCURRENCY);
+    setLoadingMsg(`Live: worklogs ${Math.min(i + batch.length, issues.length)}/${issues.length}…`);
+    const res = await Promise.all(batch.map(async issue => {
+      try {
+        const wl = await jiraFetch(`/rest/api/3/issue/${issue.key}/worklog`);
+        return { key: issue.key, logs: wl.worklogs || [] };
+      } catch (_) {
+        return { key: issue.key, logs: [] };
+      }
+    }));
+    res.forEach(r => { out[r.key] = r.logs; });
+  }
+  return out;
+}
+
+// Throws on CORS / network / auth failure so the caller can fall back.
+async function fetchLiveFromJira() {
+  if (!S.config?.url || !S.config?.email || !S.config?.token) {
+    throw new Error('No Jira credentials configured');
+  }
+
+  const allBoards = await loadBoards();   // first call — throws on CORS/network
+  const targets = [];
+  for (const [name, team] of Object.entries(LIVE_TEAM_BOARDS)) {
+    const b = (allBoards || []).find(x => x.name === name);
+    if (b) targets.push({ board: b, team });
+  }
+  if (!targets.length) throw new Error('None of the team boards were found via the API');
+
+  const cutoff = (() => {
+    const d = new Date(); d.setDate(d.getDate() - LIVE_RECENT_DAYS);
+    return d.toISOString().slice(0, 10);
+  })();
+  const fields = [
+    'summary', 'assignee', 'issuetype', 'status', 'components',
+    'timespent', 'timeoriginalestimate', 'timeestimate', 'priority',
+    LIVE_DEPT_FIELD, LIVE_PROJ_FIELD,
+  ].join(',');
+
+  const boards = [];
+  for (const { board, team } of targets) {
+    const rawIssues = await jiraFetchAll(
+      `/rest/agile/1.0/board/${board.id}/issue`,
+      'issues',
+      { jql: `updated >= "${cutoff}"`, fields, maxResults: 100 }
+    );
+    const wlMap = await liveFetchWorklogs(rawIssues);
+
+    const issues = rawIssues.map(i => {
+      const f = i.fields || {};
+      return {
+        key: i.key,
+        fields: {
+          summary:              f.summary || '',
+          timespent:            f.timespent || 0,
+          timeoriginalestimate: f.timeoriginalestimate || 0,
+          timeestimate:         f.timeestimate || 0,
+          assignee: f.assignee ? {
+            displayName:  f.assignee.displayName || 'Unassigned',
+            avatarUrls:   f.assignee.avatarUrls || {},
+            emailAddress: f.assignee.emailAddress || '',
+          } : null,
+          issuetype: { name: f.issuetype?.name || 'Unknown', iconUrl: f.issuetype?.iconUrl || '' },
+          status:    { name: f.status?.name || '', statusCategory: { key: f.status?.statusCategory?.key || 'new' } },
+          components:    (f.components || []).map(c => ({ name: c.name })),
+          supportedDept: liveExtractField(f[LIVE_DEPT_FIELD]),
+          projectNumber: liveExtractField(f[LIVE_PROJ_FIELD]),
+        },
+        worklogs: (wlMap[i.key] || []).map(w => ({
+          id:      w.id || '',
+          author:  {
+            displayName:  w.author?.displayName || 'Unassigned',
+            avatarUrls:   w.author?.avatarUrls || {},
+            emailAddress: w.author?.emailAddress || '',
+          },
+          started:          w.started || '',
+          timeSpentSeconds: w.timeSpentSeconds || 0,
+        })),
+      };
+    });
+
+    boards.push({
+      id:   board.id,
+      name: board.name,
+      type: board.type || 'kanban',
+      team,
+      sprints: [{
+        id: `${board.id}_live`, name: 'Live', state: 'active',
+        startDate: null, endDate: null, goal: '', issues,
+      }],
+    });
+  }
+
+  return { fetchedAt: new Date().toISOString(), boards };
+}
+
+// ═══════════════════════════════════════════════════════
 //  DATA PROCESSING
 // ═══════════════════════════════════════════════════════
 function secToHours(s) { return Math.round((s || 0) / 360) / 10; }
@@ -1979,23 +2102,58 @@ async function loadDashboard() {
 }
 
 async function refreshDashboard() {
-  if (S.mode === 'json' && S.config?.ghToken && S.config?.ghRepo) {
-    document.getElementById('refreshBtn').disabled = true;
+  const btn = document.getElementById('refreshBtn');
+  btn.disabled = true;
+
+  // 1) Fast path: fetch directly from Jira in the browser (seconds).
+  if (S.config?.url && S.config?.email && S.config?.token) {
+    try {
+      setHeaderStatus('Refreshing live from Jira…');
+      const live = await fetchLiveFromJira();
+      if (live.boards.length) {
+        activateJsonMode(live);
+        setHeaderStatus(`✓ Live · ${new Date(live.fetchedAt).toLocaleTimeString()}`);
+        btn.disabled = false;
+        resetAutoRefreshCountdown();
+        return;
+      }
+    } catch (err) {
+      console.warn('Direct Jira refresh unavailable, falling back:', err);
+      // fall through to the GitHub Actions / cached path below
+    }
+  }
+
+  // 2) Fallback: trigger the GitHub Actions workflow (slower, but CORS-free).
+  if (S.config?.ghToken && S.config?.ghRepo) {
+    setHeaderStatus('Direct API unavailable — refreshing via GitHub Actions…');
     const success = await triggerAndWaitForWorkflow();
     if (success) {
       const freshData = await tryLoadDataJson();
       if (freshData?.boards?.length) {
         activateJsonMode(freshData);
-        const fetched = new Date(freshData.fetchedAt);
-        setHeaderStatus(`✓ Live · ${fetched.toLocaleTimeString()}`);
+        setHeaderStatus(`✓ Updated · ${new Date(freshData.fetchedAt).toLocaleTimeString()}`);
       }
     } else {
       setHeaderStatus('⚠ Refresh timed out — showing cached data');
     }
-    document.getElementById('refreshBtn').disabled = false;
+    btn.disabled = false;
+    resetAutoRefreshCountdown();
+    return;
+  }
+
+  // 3) Last resort: re-read the cached data.json, or the legacy API load.
+  if (S.mode === 'json') {
+    const cached = await tryLoadDataJson();
+    if (cached?.boards?.length) {
+      activateJsonMode(cached);
+      setHeaderStatus(`Cached · ${new Date(cached.fetchedAt).toLocaleTimeString()}`);
+    }
+    btn.disabled = false;
+    resetAutoRefreshCountdown();
     return;
   }
   await loadDashboard();
+  btn.disabled = false;
   resetAutoRefreshCountdown();
 }
 
