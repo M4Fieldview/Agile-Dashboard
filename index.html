@@ -2123,15 +2123,23 @@ async function refreshDashboard() {
     }
   }
 
-  // 2) Fallback: trigger the GitHub Actions workflow (slower, but CORS-free).
+  // 2) GitHub Actions: trigger a fresh fetch (CORS-free, ~1-3 min).
   if (S.config?.ghToken && S.config?.ghRepo) {
-    setHeaderStatus('Direct API unavailable — refreshing via GitHub Actions…');
+    const hadJiraCreds = !!(S.config?.url && S.config?.email && S.config?.token);
+    setHeaderStatus(hadJiraCreds
+      ? 'Direct API unavailable — refreshing via GitHub Actions…'
+      : 'Refreshing via GitHub Actions…');
+    const prevFetchedAt = S.jsonData?.fetchedAt || '';
     const success = await triggerAndWaitForWorkflow();
     if (success) {
-      const freshData = await tryLoadDataJson();
-      if (freshData?.boards?.length) {
-        activateJsonMode(freshData);
-        setHeaderStatus(`✓ Updated · ${new Date(freshData.fetchedAt).toLocaleTimeString()}`);
+      // The workflow committed data.json, but GitHub Pages may still serve a
+      // cached copy for a bit — poll until the fetchedAt actually changes.
+      const fresh = await pollForFreshData(prevFetchedAt);
+      if (fresh?.boards?.length) {
+        activateJsonMode(fresh);
+        setHeaderStatus(`✓ Updated · ${new Date(fresh.fetchedAt).toLocaleTimeString()}`);
+      } else {
+        setHeaderStatus('✓ Fetched — new data deploying, will appear shortly');
       }
     } else {
       setHeaderStatus('⚠ Refresh timed out — showing cached data');
@@ -2289,6 +2297,22 @@ async function tryLoadDataJson() {
   } catch (_) {
     return null;
   }
+}
+
+// Poll data.json until its fetchedAt differs from prevFetchedAt (i.e. the
+// freshly-committed file has propagated through the GitHub Pages CDN).
+async function pollForFreshData(prevFetchedAt, timeoutMs = 90000) {
+  const start = Date.now();
+  let last = null;
+  while (Date.now() - start < timeoutMs) {
+    const data = await tryLoadDataJson();
+    if (data?.fetchedAt && data.fetchedAt !== prevFetchedAt) return data;
+    last = data;
+    const elapsed = Math.round((Date.now() - start) / 1000);
+    setHeaderStatus(`✓ Fetched — waiting for deploy… ${elapsed}s`);
+    await new Promise(r => setTimeout(r, 5000));
+  }
+  return last; // fall back to whatever we last got
 }
 
 function activateJsonMode(jsonData) {
