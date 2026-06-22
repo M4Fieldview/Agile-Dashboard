@@ -335,38 +335,28 @@ def process_kanban_board(board_id, board_name, board_type):
     print(f'  {len(issues)} recently updated issues — attaching worklogs…', file=sys.stderr)
     attach_worklogs(issues)
 
-    # Bucket into rolling 2-week windows by worklog start date
-    windows = build_time_windows(RECENT_DAYS)
-    output_sprints = []
-    for label, start_d, end_d in windows:
-        window_issues = [
-            slim_issue(i) for i in issues
-            if any(
-                start_d <= wl.get('started', '')[:10] <= end_d
-                for wl in (i.get('worklogs') or [])
-            )
-        ]
-        # Include window even if empty so the full date range is browsable
-        output_sprints.append({
-            'id':        f'{board_id}_{start_d}',
-            'name':      label,
-            'state':     'active' if label == windows[0][0] else 'closed',
-            'startDate': start_d + 'T00:00:00.000Z',
-            'endDate':   end_d   + 'T23:59:59.000Z',
-            'goal':      '',
-            'issues':    window_issues,
-        })
+    # Emit every issue that has at least one worklog, in a single window
+    # spanning the lookback period. The dashboard combines boards and filters
+    # by worklog date client-side, so server-side 2-week bucketing only ever
+    # dropped issues whose worklogs fell outside the arbitrary window range.
+    today   = datetime.now(timezone.utc).date()
+    start_d = (today - timedelta(days=RECENT_DAYS)).strftime('%Y-%m-%d')
+    end_d   = today.strftime('%Y-%m-%d')
+    logged_issues = [slim_issue(i) for i in issues if (i.get('worklogs') or [])]
 
-    with_data = sum(1 for s in output_sprints if s['issues'])
-    print(f'  {len(output_sprints)} windows ({with_data} with worklog data).', file=sys.stderr)
+    output_sprints = [{
+        'id':        f'{board_id}_recent',
+        'name':      f'Last {RECENT_DAYS} days',
+        'state':     'active',
+        'startDate': start_d + 'T00:00:00.000Z',
+        'endDate':   end_d   + 'T23:59:59.000Z',
+        'goal':      '',
+        'issues':    logged_issues,
+    }]
+
+    print(f'  {len(logged_issues)} issues with logged time emitted.', file=sys.stderr)
     return {
         'id': board_id, 'name': board_name, 'type': board_type, 'sprints': output_sprints,
-        # Debug: how many issues the board returned vs. how many had worklogs
-        '_debug': {
-            'rawIssues':      len(issues),
-            'withAnyWorklog': sum(1 for i in issues if i.get('worklogs')),
-            'sampleKeys':     [i.get('key') for i in issues[:8]],
-        },
     }
 
 
