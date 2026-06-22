@@ -335,14 +335,13 @@ def process_kanban_board(board_id, board_name, board_type):
     print(f'  {len(issues)} recently updated issues — attaching worklogs…', file=sys.stderr)
     attach_worklogs(issues)
 
-    # Emit every issue that has at least one worklog, in a single window
-    # spanning the lookback period. The dashboard combines boards and filters
-    # by worklog date client-side, so server-side 2-week bucketing only ever
-    # dropped issues whose worklogs fell outside the arbitrary window range.
+    # Emit ALL recently-updated issues (not just ones with worklogs) in a single
+    # window. The time-tracking dashboard filters to logged time client-side,
+    # while the Kanban tab needs every ticket regardless of logged time.
     today   = datetime.now(timezone.utc).date()
     start_d = (today - timedelta(days=RECENT_DAYS)).strftime('%Y-%m-%d')
     end_d   = today.strftime('%Y-%m-%d')
-    logged_issues = [slim_issue(i) for i in issues if (i.get('worklogs') or [])]
+    all_issues = [slim_issue(i) for i in issues]
 
     output_sprints = [{
         'id':        f'{board_id}_recent',
@@ -351,10 +350,11 @@ def process_kanban_board(board_id, board_name, board_type):
         'startDate': start_d + 'T00:00:00.000Z',
         'endDate':   end_d   + 'T23:59:59.000Z',
         'goal':      '',
-        'issues':    logged_issues,
+        'issues':    all_issues,
     }]
 
-    print(f'  {len(logged_issues)} issues with logged time emitted.', file=sys.stderr)
+    logged = sum(1 for i in issues if (i.get('worklogs') or []))
+    print(f'  {len(all_issues)} issues emitted ({logged} with logged time).', file=sys.stderr)
     return {
         'id': board_id, 'name': board_name, 'type': board_type, 'sprints': output_sprints,
     }
@@ -510,10 +510,31 @@ def main():
             result['team'] = TARGET_BOARDS[board['name']]
             output_boards.append(result)
 
+    # ── Job-number field discovery (temporary diagnostic) ─────────────────────
+    # projectNumber is null on the M4 projects, so find the right field. Dump:
+    #  - global custom fields whose name hints at job/project/number
+    #  - all non-null fields of one sample ticket per board
+    field_debug = {}
+    try:
+        field_map = discover_fields()  # {name.lower(): id}
+        hints = {n: fid for n, fid in field_map.items()
+                 if any(h in n for h in ('job', 'project', 'number', 'wo', 'work order', 'contract'))}
+        field_debug['candidateFields'] = hints
+        samples = {}
+        for b in output_boards:
+            issues = (b.get('sprints') or [{}])[0].get('issues') or []
+            if issues:
+                key = issues[0]['key']
+                samples[key] = get_sample_issue_fields(key)
+        field_debug['sampleIssues'] = samples
+    except Exception as e:
+        field_debug['error'] = str(e)
+
     # ── Write output ──────────────────────────────────────────────────────────
     result = {
-        'fetchedAt': datetime.now(timezone.utc).isoformat(),
-        'boards':    output_boards,
+        'fetchedAt':  datetime.now(timezone.utc).isoformat(),
+        'boards':     output_boards,
+        'fieldDebug': field_debug,
     }
 
     out_path = os.path.normpath(
