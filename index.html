@@ -907,11 +907,6 @@
         <div class="card-value" id="cardIssues">—</div>
         <div class="card-sub" id="cardIssuesSub"></div>
       </div>
-      <div class="card card-accent purple">
-        <div class="card-label">Estimate Accuracy</div>
-        <div class="card-value" id="cardEstimate">—</div>
-        <div class="card-sub" id="cardEstimateSub"></div>
-      </div>
     </div>
 
     <!-- Charts Row 1 -->
@@ -996,9 +991,7 @@
               <th onclick="sortTable('status')">Status</th>
               <th onclick="sortTable('dept')">Department</th>
               <th onclick="sortTable('projectNumber')">Project #</th>
-              <th onclick="sortTable('estimate')" title="Original estimate">Estimate</th>
               <th onclick="sortTable('logged')" title="Time spent">Logged</th>
-              <th onclick="sortTable('remaining')" title="Remaining estimate">Remaining</th>
               <th>Progress</th>
             </tr>
           </thead>
@@ -1968,7 +1961,7 @@ function exportTableCSV() {
     return true;
   });
 
-  const headers = ['Key','Summary','Type','Assignee','Status','Department','Project #','Estimate (h)','Logged (h)','Remaining (h)'];
+  const headers = ['Key','Summary','Type','Assignee','Status','Department','Project #','Logged (h)'];
   const escape  = v => `"${String(v ?? '').replace(/"/g,'""')}"`;
   let csv = headers.join(',') + '\n';
   rows.forEach(r => {
@@ -1980,9 +1973,7 @@ function exportTableCSV() {
       escape(r.status),
       escape(r.dept),
       escape(r.projectNumber),
-      +(secToHours(r.estimate)).toFixed(2),
       +(secToHours(r.logged)).toFixed(2),
-      +(secToHours(r.remaining)).toFixed(2),
     ].join(',') + '\n';
   });
 
@@ -1998,13 +1989,13 @@ function sortTable(col) {
     S.sortDir = S.sortDir === 'asc' ? 'desc' : 'asc';
   } else {
     S.sortCol = col;
-    S.sortDir = ['logged', 'estimate', 'remaining'].includes(col) ? 'desc' : 'asc';
+    S.sortDir = col === 'logged' ? 'desc' : 'asc';
   }
   // Update header classes
   document.querySelectorAll('#issuesTable thead th').forEach(th => {
     th.classList.remove('sort-asc', 'sort-desc');
   });
-  const cols = ['key','summary','type','assignee','status','dept','projectNumber','estimate','logged','remaining',''];
+  const cols = ['key','summary','type','assignee','status','dept','projectNumber','logged',''];
   const idx = cols.indexOf(S.sortCol);
   if (idx >= 0) {
     const th = document.querySelectorAll('#issuesTable thead th')[idx];
@@ -2055,9 +2046,7 @@ function sortAndRenderTable() {
         <td><span class="status-chip" style="${statusStyle(r.statusCat)}">${r.status}</span></td>
         <td><span style="font-size:12px;color:var(--muted)">${r.dept || '—'}</span></td>
         <td><span style="font-size:12px;color:var(--muted)">${r.projectNumber || '—'}</span></td>
-        <td><span class="time-val">${r.estimate > 0 ? fmtSecs(r.estimate) : '—'}</span></td>
         <td><span class="time-val" style="color:${r.logged > 0 ? 'var(--text)' : 'var(--muted)'}">${r.logged > 0 ? fmtSecs(r.logged) : '—'}</span></td>
-        <td><span class="time-val" style="color:var(--muted)">${r.remaining > 0 ? fmtSecs(r.remaining) : '—'}</span></td>
         <td class="time-bar-cell">
           <div class="time-bar-wrap">
             <div class="time-bar-bg">
