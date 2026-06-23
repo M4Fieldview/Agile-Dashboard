@@ -328,6 +328,7 @@
     .kanban-card {
       background: var(--card);
       border: 1px solid var(--border);
+      border-left: 4px solid var(--border);
       border-radius: var(--radius);
       padding: 10px 12px;
       box-shadow: var(--shadow);
@@ -335,6 +336,22 @@
       flex-direction: column;
       gap: 7px;
     }
+    .kanban-card[data-team="M4 CAD"]        { border-left-color: var(--blue); }
+    .kanban-card[data-team="M4 Field Tech"] { border-left-color: var(--orange); }
+    .kanban-card[data-team="M4 GIS"]        { border-left-color: var(--green); }
+    .kanban-team-badge {
+      font-size: 9px;
+      font-weight: 700;
+      letter-spacing: .04em;
+      text-transform: uppercase;
+      border-radius: 3px;
+      padding: 1px 5px;
+      white-space: nowrap;
+      opacity: .85;
+    }
+    .kanban-team-badge[data-team="M4 CAD"]        { background: rgba(0,82,204,.12); color: var(--blue); border: 1px solid rgba(0,82,204,.25); }
+    .kanban-team-badge[data-team="M4 Field Tech"] { background: rgba(255,139,0,.12); color: var(--orange); border: 1px solid rgba(255,139,0,.25); }
+    .kanban-team-badge[data-team="M4 GIS"]        { background: rgba(54,179,126,.12); color: var(--green); border: 1px solid rgba(54,179,126,.25); }
     .kanban-card-summary { font-size: 13px; color: var(--text); line-height: 1.35; }
     .kanban-card-meta { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
     .kanban-card-left { display: flex; align-items: center; gap: 6px; min-width: 0; }
@@ -2520,8 +2537,9 @@ function loadTeams(boards, label) {
   S.activeBoards = boards;   // for the Kanban column layout
   const issueMap = {};
   boards.forEach(board => {
+    const teamName = board.team || board.name || '';
     combineAllSprintIssues(board).forEach(issue => {
-      if (!issueMap[issue.key]) issueMap[issue.key] = { ...issue, worklogs: [] };
+      if (!issueMap[issue.key]) issueMap[issue.key] = { ...issue, worklogs: [], _team: teamName };
       const seen = new Set(issueMap[issue.key].worklogs.map(w => w.id || `${w.started}|${w.author?.displayName}`));
       (issue.worklogs || []).forEach(wl => {
         const k = wl.id || `${wl.started}|${wl.author?.displayName}`;
@@ -2607,14 +2625,16 @@ function renderKanban() {
 
   // Build the column layout from the boards' actual Kanban configuration so
   // every column shows (even empty ones), in board order. Merge across the
-  // selected teams: union of column names (first-seen order) + a combined
-  // statusId → column map.
+  // selected teams: union of column names (first-seen order, case-insensitive
+  // dedup) + a combined statusId → column map.
   const orderedNames = [];
-  const statusToCol  = {};   // statusId -> columnName
+  const nameLower    = {};   // lowercase -> canonical column name (first seen wins)
+  const statusToCol  = {};   // statusId  -> columnName
   (S.activeBoards || []).forEach(b => {
     (b.columns || []).forEach(col => {
-      if (!orderedNames.includes(col.name)) orderedNames.push(col.name);
-      (col.statusIds || []).forEach(sid => { statusToCol[sid] = col.name; });
+      const key = col.name.trim().toLowerCase();
+      if (!nameLower[key]) { nameLower[key] = col.name.trim(); orderedNames.push(col.name.trim()); }
+      (col.statusIds || []).forEach(sid => { statusToCol[sid] = nameLower[key]; });
     });
   });
 
@@ -2627,9 +2647,12 @@ function renderKanban() {
     const sid  = i.fields?.status?.id;
     let colName = statusToCol[sid];
     if (!colName) {
-      // No board config (or unmapped status) — fall back to the status name
-      colName = i.fields?.status?.name || 'No Status';
-      if (!(colName in buckets)) { buckets[colName] = []; orderedNames.push(colName); }
+      // No board config (or unmapped status) — fall back to the status name,
+      // matching case-insensitively against existing columns.
+      const rawName = (i.fields?.status?.name || 'No Status').trim();
+      const key = rawName.toLowerCase();
+      colName = nameLower[key] || rawName;
+      if (!nameLower[key]) { nameLower[key] = colName; buckets[colName] = []; orderedNames.push(colName); }
     }
     buckets[colName].push(i);
   });
@@ -2648,22 +2671,28 @@ function renderKanban() {
     return;
   }
 
-  board.innerHTML = orderedNames.map(name => `
+  const TEAM_ORDER = ['M4 CAD', 'M4 Field Tech', 'M4 GIS'];
+  const teamRank = t => { const i = TEAM_ORDER.indexOf(t); return i === -1 ? 99 : i; };
+
+  board.innerHTML = orderedNames.map(name => {
+    const sorted = [...buckets[name]].sort((a, b) => teamRank(a._team) - teamRank(b._team) || (a._team || '').localeCompare(b._team || ''));
+    return `
     <div class="kanban-col">
       <div class="kanban-col-head">
         <span>${escapeHtml(name)}</span>
-        <span class="kanban-col-count">${buckets[name].length}</span>
+        <span class="kanban-col-count">${sorted.length}</span>
       </div>
       <div class="kanban-cards">
-        ${buckets[name].map(renderKanbanCard).join('') || '<div class="kanban-empty">—</div>'}
+        ${sorted.map(renderKanbanCard).join('') || '<div class="kanban-empty">—</div>'}
       </div>
-    </div>
-  `).join('');
+    </div>`;
+  }).join('');
 }
 
 function renderKanbanCard(issue) {
   const f       = issue.fields || {};
   const job     = jobNumberOf(issue);
+  const team    = issue._team || '';
   const url     = `${S.config?.url || ''}/browse/${issue.key}`;
   const typeIco = f.issuetype?.iconUrl ? `<img src="${f.issuetype.iconUrl}" width="12" height="12" alt="" />` : '';
   const assignee = f.assignee?.displayName || 'Unassigned';
@@ -2672,16 +2701,20 @@ function renderKanbanCard(issue) {
     : `<div class="avatar" style="width:20px;height:20px;font-size:9px">${assignee.charAt(0).toUpperCase()}</div>`;
   const secs    = (issue.worklogs || []).reduce((s, w) => s + (w.timeSpentSeconds || 0), 0);
   const logged  = secs > 0 ? `<span class="time-val" style="font-size:11px">${fmtSecs(secs)}</span>` : '';
+  const teamBadge = team ? `<span class="kanban-team-badge" data-team="${escapeHtml(team)}">${escapeHtml(team)}</span>` : '';
 
   return `
-    <div class="kanban-card">
+    <div class="kanban-card" data-team="${escapeHtml(team)}">
       <div class="kanban-card-summary">${escapeHtml(f.summary || '')}</div>
       <div class="kanban-card-meta">
         <div class="kanban-card-left">
           <span class="type-badge" style="padding:1px 5px">${typeIco}</span>
           <a class="kanban-key" href="${url}" target="_blank">${issue.key}</a>
         </div>
-        ${job ? `<span class="kanban-job">${escapeHtml(job)}</span>` : ''}
+        <div class="kanban-card-left" style="gap:5px">
+          ${teamBadge}
+          ${job ? `<span class="kanban-job">${escapeHtml(job)}</span>` : ''}
+        </div>
       </div>
       <div class="kanban-card-meta">
         <div class="kanban-card-left">${avatar}<span style="font-size:11px;color:var(--muted)">${escapeHtml(assignee)}</span></div>
