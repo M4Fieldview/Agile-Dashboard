@@ -44,7 +44,7 @@ def _base_issue_fields():
     fields = [
         'summary', 'assignee', 'issuetype', 'status', 'components',
         'timespent', 'timeoriginalestimate', 'timeestimate',
-        'priority', 'customfield_10016',
+        'priority', 'customfield_10016', 'created', 'resolutiondate',
     ]
     if SUPPORTED_DEPT_FIELD:
         fields.append(SUPPORTED_DEPT_FIELD)
@@ -210,9 +210,11 @@ def slim_issue(issue):
                 'name': status.get('name', ''),
                 'statusCategory': {'key': status_cat.get('key', 'new')},
             },
-            'components':    [{'name': c['name']} for c in f.get('components', [])],
-            'supportedDept': extract_dept_value(f.get(SUPPORTED_DEPT_FIELD)) if SUPPORTED_DEPT_FIELD else None,
-            'projectNumber': extract_dept_value(f.get(PROJECT_NUMBER_FIELD))  if PROJECT_NUMBER_FIELD  else None,
+            'components':      [{'name': c['name']} for c in f.get('components', [])],
+            'supportedDept':   extract_dept_value(f.get(SUPPORTED_DEPT_FIELD)) if SUPPORTED_DEPT_FIELD else None,
+            'projectNumber':   extract_dept_value(f.get(PROJECT_NUMBER_FIELD))  if PROJECT_NUMBER_FIELD  else None,
+            'created':         f.get('created', ''),
+            'resolutiondate':  f.get('resolutiondate', None),
         },
         'worklogs': slim_worklogs(issue.get('worklogs', [])),
     }

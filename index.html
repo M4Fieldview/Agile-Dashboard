@@ -265,6 +265,29 @@
     .tab-btn.active { color: var(--blue); border-bottom-color: var(--blue); }
 
     /* ── KANBAN ── */
+    /* ── PROJECT HISTORY ── */
+    .hist-bar {
+      display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+      background: var(--card); border-bottom: 1px solid var(--border);
+      padding: 12px 20px;
+    }
+    .hist-bar label { font-size: 12px; font-weight: 700; color: var(--muted); white-space: nowrap; }
+    .hist-bar select {
+      font-size: 14px; font-weight: 600; padding: 6px 12px;
+      border: 1px solid var(--border); border-radius: var(--radius);
+      background: var(--input-bg); color: var(--text); outline: none;
+    }
+    .hist-content-inner { padding: 20px; }
+    .hist-stats { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 20px; }
+    .hist-stat {
+      background: var(--card); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 14px 18px; flex: 1; min-width: 110px;
+    }
+    .hist-stat-label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); margin-bottom: 5px; }
+    .hist-stat-value { font-size: 24px; font-weight: 700; color: var(--text); line-height: 1; }
+    .hist-stat-value.sm { font-size: 14px; font-weight: 600; padding-top: 4px; }
+    .hist-no-data { padding: 60px; text-align: center; color: var(--muted); font-size: 14px; }
+
     .kanban-bar {
       display: flex;
       align-items: center;
@@ -826,6 +849,7 @@
 <div class="tab-bar">
   <button class="tab-btn active" id="tabDashboard" onclick="switchView('dashboard')">Dashboard</button>
   <button class="tab-btn" id="tabKanban" onclick="switchView('kanban')">Kanban Board</button>
+  <button class="tab-btn" id="tabHistory" onclick="switchView('history')">Project History</button>
 </div>
 
 <!-- ══════════════════════ SPRINT BAR ══════════════════════ -->
@@ -864,6 +888,13 @@
     <input type="date" id="dateTo" onchange="onCustomDate()" />
   </div>
   <span id="dateRangeLabel"></span>
+  <div style="display:flex;align-items:center;gap:6px;margin-left:auto">
+    <label for="dashJobFilter" style="font-size:12px;font-weight:600;color:var(--muted);white-space:nowrap">Job #</label>
+    <select id="dashJobFilter" onchange="onDashJobChange()"
+      style="font-size:12px;padding:3px 8px;border-radius:var(--radius);border:1px solid var(--border);background:var(--input-bg);color:var(--text)">
+      <option value="__all__">All job numbers</option>
+    </select>
+  </div>
 </div>
 
 <!-- ══════════════════════ MAIN ══════════════════════ -->
@@ -1019,6 +1050,83 @@
     </div>
     <div class="kanban-board" id="kanbanBoard"></div>
   </div><!-- /kanbanContent -->
+
+  <!-- ══ PROJECT HISTORY ══ -->
+  <div id="histContent" style="display:none">
+    <div class="hist-bar">
+      <label for="histJobFilter">Project</label>
+      <select id="histJobFilter" onchange="onHistJobChange()">
+        <option value="__all__">All Projects</option>
+      </select>
+    </div>
+    <div class="hist-content-inner">
+      <div class="hist-stats" id="histStats" style="display:none">
+        <div class="hist-stat">
+          <div class="hist-stat-label">Total Hours</div>
+          <div class="hist-stat-value" id="histStatHours">—</div>
+        </div>
+        <div class="hist-stat">
+          <div class="hist-stat-label">Active Tickets</div>
+          <div class="hist-stat-value" id="histStatTickets">—</div>
+        </div>
+        <div class="hist-stat">
+          <div class="hist-stat-label">Team Members</div>
+          <div class="hist-stat-value" id="histStatMembers">—</div>
+        </div>
+        <div class="hist-stat">
+          <div class="hist-stat-label">First Activity</div>
+          <div class="hist-stat-value sm" id="histStatFirst">—</div>
+        </div>
+        <div class="hist-stat">
+          <div class="hist-stat-label">Latest Activity</div>
+          <div class="hist-stat-value sm" id="histStatLast">—</div>
+        </div>
+      </div>
+      <div id="histNoData" class="hist-no-data" style="display:none">No worklog data for this selection.</div>
+
+      <!-- Cumulative line — full width -->
+      <div class="charts-row" style="margin-bottom:20px">
+        <div class="chart-card" style="flex:1">
+          <div class="chart-card-header">
+            <h3 class="chart-title">Cumulative Hours Over Time</h3>
+          </div>
+          <div class="chart-wrap" style="height:220px"><canvas id="histCumulativeChart"></canvas></div>
+        </div>
+      </div>
+
+      <!-- Weekly by member + active tickets -->
+      <div class="charts-row" style="margin-bottom:20px">
+        <div class="chart-card" style="flex:1">
+          <div class="chart-card-header">
+            <h3 class="chart-title">Weekly Hours by Team Member</h3>
+          </div>
+          <div class="chart-wrap" style="height:220px"><canvas id="histWeeklyChart"></canvas></div>
+        </div>
+        <div class="chart-card" style="flex:1">
+          <div class="chart-card-header">
+            <h3 class="chart-title">Tickets with Activity Per Week</h3>
+          </div>
+          <div class="chart-wrap" style="height:220px"><canvas id="histTicketsChart"></canvas></div>
+        </div>
+      </div>
+
+      <!-- Hours by issue type + hours by member total -->
+      <div class="charts-row">
+        <div class="chart-card" style="flex:1">
+          <div class="chart-card-header">
+            <h3 class="chart-title">Hours by Issue Type</h3>
+          </div>
+          <div class="chart-wrap" style="height:220px"><canvas id="histTypeChart"></canvas></div>
+        </div>
+        <div class="chart-card" style="flex:1">
+          <div class="chart-card-header">
+            <h3 class="chart-title">Total Hours by Team Member</h3>
+          </div>
+          <div class="chart-wrap" style="height:220px"><canvas id="histMemberChart"></canvas></div>
+        </div>
+      </div>
+    </div>
+  </div><!-- /histContent -->
 </main>
 
 <!-- ══════════════════════ CHART EXPAND MODAL ══════════════════════ -->
@@ -1059,6 +1167,8 @@ const S = {
   tableRows: [],        // all rows (pre-filter)
   dateFrom: null,       // active date filter start (YYYY-MM-DD)
   dateTo:   null,       // active date filter end   (YYYY-MM-DD)
+  dashJobFilter: '__all__',
+  histJobFilter: '__all__',
   autoTimer: null,
   autoCountdown: null,
   charts: {},
@@ -1533,9 +1643,28 @@ function onCustomDate() {
   applyDateFilter();
 }
 
+function onDashJobChange() {
+  S.dashJobFilter = document.getElementById('dashJobFilter').value;
+  applyDateFilter();
+}
+
+function populateDashJobFilter() {
+  const sel = document.getElementById('dashJobFilter');
+  if (!sel) return;
+  const prev = S.dashJobFilter || '__all__';
+  const jobs = [...new Set((S.issues || []).map(i => jobNumberOf(i)).filter(Boolean))].sort((a, b) => +a - +b || a.localeCompare(b));
+  sel.innerHTML = '<option value="__all__">All job numbers</option>' +
+    jobs.map(j => `<option value="${j}">${j}</option>`).join('');
+  sel.value = jobs.includes(prev) || prev === '__all__' ? prev : '__all__';
+  S.dashJobFilter = sel.value;
+}
+
 function applyDateFilter() {
   if (!S.processed) return;
-  const filtered = filterAndReaggregate(S.processed, S.dateFrom, S.dateTo);
+  const jobFilter = S.dashJobFilter || '__all__';
+  const allowedKeys = jobFilter === '__all__' ? null :
+    new Set((S.issues || []).filter(i => jobNumberOf(i) === jobFilter).map(i => i.key));
+  const filtered = filterAndReaggregate(S.processed, S.dateFrom, S.dateTo, allowedKeys);
   updateDateRangeLabel();
   renderCards(filtered);
   renderAssigneeChart(filtered);
@@ -1545,9 +1674,10 @@ function applyDateFilter() {
   renderTableFiltered(filtered);
 }
 
-function filterAndReaggregate(processed, from, to) {
+function filterAndReaggregate(processed, from, to, allowedKeys) {
   const entries = processed.allEntries.filter(e =>
-    (!from || e.dateKey >= from) && (!to || e.dateKey <= to)
+    (!from || e.dateKey >= from) && (!to || e.dateKey <= to) &&
+    (!allowedKeys || allowedKeys.has(e.issueKey))
   );
 
   // Rebuild aggregates from filtered entries
@@ -2557,9 +2687,12 @@ function loadTeams(boards, label) {
   S.dateTo    = null;
   renderAllWithDateFilter();
 
-  // Keep the Kanban tab in sync with the current team selection
+  // Keep filters in sync with the current team selection
+  populateDashJobFilter();
+  populateHistJobFilter();
   populateJobFilter();
   renderKanban();
+  if (S.activeView === 'history') renderProjectHistory();
 
   const fetched = new Date(S.jsonData.fetchedAt);
   const teamCount = boards.length;
@@ -2571,14 +2704,19 @@ function loadTeams(boards, label) {
 // ═══════════════════════════════════════════════════════
 function switchView(view) {
   S.activeView = view;
+  const isDash   = view === 'dashboard';
   const isKanban = view === 'kanban';
-  document.getElementById('tabDashboard').classList.toggle('active', !isKanban);
+  const isHist   = view === 'history';
+  document.getElementById('tabDashboard').classList.toggle('active', isDash);
   document.getElementById('tabKanban').classList.toggle('active', isKanban);
-  document.getElementById('dashboardContent').style.display = isKanban ? 'none' : '';
+  document.getElementById('tabHistory').classList.toggle('active', isHist);
+  document.getElementById('dashboardContent').style.display = isDash   ? '' : 'none';
   document.getElementById('kanbanContent').style.display    = isKanban ? '' : 'none';
-  // The date range only applies to the time-tracking dashboard
-  document.getElementById('dateBar').style.display = isKanban ? 'none' : '';
+  document.getElementById('histContent').style.display      = isHist   ? '' : 'none';
+  // The date range bar only applies to the time-tracking dashboard
+  document.getElementById('dateBar').style.display = isDash ? '' : 'none';
   if (isKanban) { populateJobFilter(); renderKanban(); }
+  if (isHist)   { populateHistJobFilter(); renderProjectHistory(); }
 }
 
 // ═══════════════════════════════════════════════════════
@@ -2588,6 +2726,208 @@ function jobNumberOf(issue) {
   const p = issue.fields?.projectNumber;
   if (p === null || p === undefined || p === '') return '';
   return Array.isArray(p) ? p.filter(Boolean).join(', ') : String(p);
+}
+
+// ═══════════════════════════════════════════════════════
+//  PROJECT HISTORY TAB
+// ═══════════════════════════════════════════════════════
+function populateHistJobFilter() {
+  const sel = document.getElementById('histJobFilter');
+  if (!sel) return;
+  const prev = S.histJobFilter || '__all__';
+  const jobs = [...new Set((S.issues || []).map(i => jobNumberOf(i)).filter(Boolean))]
+    .sort((a, b) => +a - +b || a.localeCompare(b));
+  sel.innerHTML = '<option value="__all__">All Projects</option>' +
+    jobs.map(j => `<option value="${j}">${j}</option>`).join('');
+  sel.value = jobs.includes(prev) || prev === '__all__' ? prev : '__all__';
+  S.histJobFilter = sel.value;
+}
+
+function onHistJobChange() {
+  S.histJobFilter = document.getElementById('histJobFilter').value;
+  renderProjectHistory();
+}
+
+function renderProjectHistory() {
+  if (!S.processed) return;
+
+  const jobFilter  = S.histJobFilter || '__all__';
+  const issues     = (S.issues || []).filter(i => jobFilter === '__all__' || jobNumberOf(i) === jobFilter);
+  const issueKeys  = new Set(issues.map(i => i.key));
+  const entries    = (S.processed.allEntries || []).filter(e => issueKeys.has(e.issueKey));
+
+  const noDataEl = document.getElementById('histNoData');
+  const statsEl  = document.getElementById('histStats');
+
+  if (!entries.length) {
+    if (noDataEl) noDataEl.style.display = '';
+    if (statsEl)  statsEl.style.display  = 'none';
+    ['histCumulative','histWeekly','histTickets','histType','histMember'].forEach(id => destroyChart(id));
+    return;
+  }
+  if (noDataEl) noDataEl.style.display = 'none';
+  if (statsEl)  statsEl.style.display  = '';
+
+  // ── Week bucketing ───────────────────────────────────
+  const weekOf = dateStr => {
+    const d = new Date(dateStr + 'T12:00:00');
+    const dow = d.getDay();
+    d.setDate(d.getDate() - dow + (dow === 0 ? -6 : 1)); // Mon
+    return d.toISOString().slice(0, 10);
+  };
+
+  const weekData = {};
+  entries.forEach(e => {
+    const wk = weekOf(e.dateKey);
+    if (!weekData[wk]) weekData[wk] = { seconds: 0, byMember: {}, byType: {}, tickets: new Set() };
+    weekData[wk].seconds += e.seconds;
+    weekData[wk].byMember[e.assignee] = (weekData[wk].byMember[e.assignee] || 0) + e.seconds;
+    weekData[wk].byType[e.issueType]  = (weekData[wk].byType[e.issueType]  || 0) + e.seconds;
+    weekData[wk].tickets.add(e.issueKey);
+  });
+
+  const weeks = Object.keys(weekData).sort();
+  const fmtWeek = w => new Date(w + 'T12:00:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  const weekLabels = weeks.map(fmtWeek);
+
+  // Cumulative hours
+  let running = 0;
+  const cumulativeData = weeks.map(w => { running += weekData[w].seconds; return +secToHours(running).toFixed(1); });
+  const weeklyHoursData  = weeks.map(w => +secToHours(weekData[w].seconds).toFixed(1));
+  const activeTicketsData = weeks.map(w => weekData[w].tickets.size);
+
+  // Member totals
+  const memberTotals = {};
+  entries.forEach(e => { memberTotals[e.assignee] = (memberTotals[e.assignee] || 0) + e.seconds; });
+  const members = Object.keys(memberTotals).sort((a, b) => memberTotals[b] - memberTotals[a]);
+
+  // Issue type totals
+  const typeTotals = {};
+  entries.forEach(e => { typeTotals[e.issueType] = (typeTotals[e.issueType] || 0) + e.seconds; });
+
+  // ── Stats ────────────────────────────────────────────
+  const totalSeconds = entries.reduce((s, e) => s + e.seconds, 0);
+  const sortedDates  = entries.map(e => e.dateKey).sort();
+  const fmtDate = d => new Date(d + 'T12:00:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+  document.getElementById('histStatHours').textContent   = fmtHours(secToHours(totalSeconds));
+  document.getElementById('histStatTickets').textContent  = issueKeys.size;
+  document.getElementById('histStatMembers').textContent = members.length;
+  document.getElementById('histStatFirst').textContent   = fmtDate(sortedDates[0]);
+  document.getElementById('histStatLast').textContent    = fmtDate(sortedDates.at(-1));
+
+  // ── Chart theme ──────────────────────────────────────
+  const isDark    = document.documentElement.getAttribute('data-theme') === 'dark';
+  const gridColor = isDark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.06)';
+  const tickColor = isDark ? '#7a88aa' : '#5E6C84';
+  const PALETTE   = ['#4C9AFF','#36B37E','#FF8B00','#6554C0','#00B8D9','#FF5630','#FFAB00','#00C7E6'];
+
+  const baseScales = {
+    x: { ticks: { color: tickColor, font: { size: 10 }, maxTicksLimit: 12 }, grid: { color: gridColor } },
+    y: { ticks: { color: tickColor, font: { size: 10 } }, grid: { color: gridColor }, beginAtZero: true },
+  };
+  const baseLegend = { labels: { color: tickColor, font: { size: 11 }, boxWidth: 12, padding: 10 } };
+
+  // ── 1. Cumulative hours (line) ───────────────────────
+  destroyChart('histCumulative');
+  const cCtx = document.getElementById('histCumulativeChart')?.getContext('2d');
+  if (cCtx) S.charts['histCumulative'] = new Chart(cCtx, {
+    type: 'line',
+    data: {
+      labels: weekLabels,
+      datasets: [{
+        label: 'Total Hours', data: cumulativeData,
+        borderColor: '#4C9AFF', backgroundColor: 'rgba(76,154,255,0.13)',
+        fill: true, tension: 0.35, pointRadius: weeks.length > 16 ? 0 : 3, pointHoverRadius: 5,
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false }, tooltip: { callbacks: { label: ctx => ` ${ctx.parsed.y}h` } } },
+      scales: baseScales,
+    }
+  });
+
+  // ── 2. Weekly hours stacked by member (bar) ──────────
+  destroyChart('histWeekly');
+  const wCtx = document.getElementById('histWeeklyChart')?.getContext('2d');
+  if (wCtx) S.charts['histWeekly'] = new Chart(wCtx, {
+    type: 'bar',
+    data: {
+      labels: weekLabels,
+      datasets: members.map((m, i) => ({
+        label: m,
+        data: weeks.map(w => +secToHours(weekData[w].byMember[m] || 0).toFixed(1)),
+        backgroundColor: PALETTE[i % PALETTE.length] + 'CC',
+        borderColor:     PALETTE[i % PALETTE.length],
+        borderWidth: 1,
+      }))
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: baseLegend },
+      scales: { x: { ...baseScales.x, stacked: true }, y: { ...baseScales.y, stacked: true } },
+    }
+  });
+
+  // ── 3. Active tickets per week (line) ─────────────────
+  destroyChart('histTickets');
+  const tCtx = document.getElementById('histTicketsChart')?.getContext('2d');
+  if (tCtx) S.charts['histTickets'] = new Chart(tCtx, {
+    type: 'line',
+    data: {
+      labels: weekLabels,
+      datasets: [{
+        label: 'Tickets', data: activeTicketsData,
+        borderColor: '#36B37E', backgroundColor: 'rgba(54,179,126,0.13)',
+        fill: true, tension: 0.3, pointRadius: weeks.length > 16 ? 0 : 4, pointHoverRadius: 6,
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false }, tooltip: { callbacks: { label: ctx => ` ${ctx.parsed.y} ticket${ctx.parsed.y !== 1 ? 's' : ''}` } } },
+      scales: { ...baseScales, y: { ...baseScales.y, ticks: { ...baseScales.y.ticks, stepSize: 1, precision: 0 } } },
+    }
+  });
+
+  // ── 4. Hours by issue type (doughnut) ─────────────────
+  destroyChart('histType');
+  const tyCtx = document.getElementById('histTypeChart')?.getContext('2d');
+  if (tyCtx) {
+    const typeEntries = Object.entries(typeTotals).sort((a, b) => b[1] - a[1]);
+    S.charts['histType'] = new Chart(tyCtx, {
+      type: 'doughnut',
+      data: {
+        labels: typeEntries.map(([t]) => t),
+        datasets: [{ data: typeEntries.map(([, s]) => +secToHours(s).toFixed(1)), backgroundColor: PALETTE, borderWidth: 2, borderColor: isDark ? '#1a1d2e' : '#fff' }]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false, cutout: '60%',
+        plugins: { legend: { ...baseLegend, position: 'right' }, tooltip: { callbacks: { label: ctx => ` ${ctx.label}: ${ctx.parsed}h` } } },
+      }
+    });
+  }
+
+  // ── 5. Total hours by member (horizontal bar) ─────────
+  destroyChart('histMember');
+  const mCtx = document.getElementById('histMemberChart')?.getContext('2d');
+  if (mCtx) S.charts['histMember'] = new Chart(mCtx, {
+    type: 'bar',
+    data: {
+      labels: members,
+      datasets: [{
+        label: 'Hours', data: members.map(m => +secToHours(memberTotals[m]).toFixed(1)),
+        backgroundColor: members.map((_, i) => PALETTE[i % PALETTE.length] + 'CC'),
+        borderColor:     members.map((_, i) => PALETTE[i % PALETTE.length]),
+        borderWidth: 1, borderRadius: 4,
+      }]
+    },
+    options: {
+      indexAxis: 'y',
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false }, tooltip: { callbacks: { label: ctx => ` ${ctx.parsed.x}h` } } },
+      scales: { x: baseScales.x, y: { ...baseScales.y, grid: { display: false } } },
+    }
+  });
 }
 
 function toggleKanbanGrouping() {
