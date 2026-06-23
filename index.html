@@ -1661,10 +1661,6 @@ function renderCards(d) {
   document.getElementById('cardIssues').textContent    = `${d.withTime} / ${d.totalIssues}`;
   document.getElementById('cardIssuesSub').textContent = 'issues with logged time';
 
-  document.getElementById('cardEstimate').textContent  = pct !== null ? `${pct}%` : '—';
-  document.getElementById('cardEstimateSub').textContent = pct !== null
-    ? (pct > 100 ? 'over estimate' : pct > 90 ? 'near capacity' : 'within estimate')
-    : 'no estimates set';
 }
 
 function destroyChart(id) {
