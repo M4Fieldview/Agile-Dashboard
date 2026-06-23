@@ -288,6 +288,16 @@
     .hist-stat-value.sm { font-size: 14px; font-weight: 600; padding-top: 4px; }
     .hist-no-data { padding: 60px; text-align: center; color: var(--muted); font-size: 14px; }
 
+    /* Team Analytics */
+    .team-heatmap, .team-coverage { width: 100%; border-collapse: collapse; font-size: 12px; }
+    .team-heatmap th, .team-coverage th { text-align: left; padding: 6px 10px; color: var(--muted); font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; border-bottom: 1px solid var(--border); white-space: nowrap; }
+    .team-heatmap td, .team-coverage td { padding: 5px 8px; border-bottom: 1px solid var(--border); }
+    .team-heatmap tr:last-child td, .team-coverage tr:last-child td { border-bottom: none; }
+    .team-heatmap .member-name { font-weight: 600; color: var(--text); white-space: nowrap; min-width: 130px; }
+    .heat-cell { text-align: center; font-size: 10px; font-weight: 600; min-width: 40px; border-radius: 3px; }
+    .team-coverage .cov-cell { text-align: center; font-weight: 600; border-radius: 3px; min-width: 80px; }
+    .team-coverage .proj-label { font-weight: 700; font-family: monospace; font-size: 12px; white-space: nowrap; }
+
     .kanban-bar {
       display: flex;
       align-items: center;
@@ -850,6 +860,7 @@
   <button class="tab-btn active" id="tabDashboard" onclick="switchView('dashboard')">Dashboard</button>
   <button class="tab-btn" id="tabKanban" onclick="switchView('kanban')">Kanban Board</button>
   <button class="tab-btn" id="tabHistory" onclick="switchView('history')">Project History</button>
+  <button class="tab-btn" id="tabTeam" onclick="switchView('team')">Team Analytics</button>
 </div>
 
 <!-- ══════════════════════ SPRINT BAR ══════════════════════ -->
@@ -1127,6 +1138,54 @@
       </div>
     </div>
   </div><!-- /histContent -->
+
+  <!-- ══ TEAM ANALYTICS ══ -->
+  <div id="teamContent" style="display:none">
+    <div class="hist-bar">
+      <label for="teamPeriodSel" style="font-size:12px;font-weight:600;color:var(--muted)">Period</label>
+      <select id="teamPeriodSel" onchange="onTeamPeriodChange()">
+        <option value="4">Last 4 weeks</option>
+        <option value="8">Last 8 weeks</option>
+        <option value="12" selected>Last 12 weeks</option>
+        <option value="26">Last 6 months</option>
+        <option value="52">Last 12 months</option>
+        <option value="0">All time</option>
+      </select>
+    </div>
+    <div class="hist-content-inner">
+      <div class="hist-stats" id="teamStats">
+        <div class="hist-stat"><div class="hist-stat-label">Active Members</div><div class="hist-stat-value" id="teamStatMembers">—</div></div>
+        <div class="hist-stat"><div class="hist-stat-label">Total Hours</div><div class="hist-stat-value" id="teamStatHours">—</div></div>
+        <div class="hist-stat"><div class="hist-stat-label">Avg Hrs / Member / Week</div><div class="hist-stat-value" id="teamStatAvgWeek">—</div></div>
+        <div class="hist-stat"><div class="hist-stat-label">Active Projects</div><div class="hist-stat-value" id="teamStatProjects">—</div></div>
+      </div>
+      <div id="teamNoData" class="hist-no-data" style="display:none">No worklog data for this period.</div>
+
+      <!-- Avg hours/ticket by type | Member allocation by project -->
+      <div class="charts-row" style="margin-bottom:20px">
+        <div class="chart-card" style="flex:1">
+          <div class="chart-card-header"><h3 class="chart-title">Avg Hours Per Ticket by Type</h3></div>
+          <div class="chart-wrap" style="height:240px"><canvas id="teamTypeChart"></canvas></div>
+        </div>
+        <div class="chart-card" style="flex:1">
+          <div class="chart-card-header"><h3 class="chart-title">Member Allocation by Project</h3></div>
+          <div class="chart-wrap" style="height:240px"><canvas id="teamAllocChart"></canvas></div>
+        </div>
+      </div>
+
+      <!-- Cross-team project coverage -->
+      <div class="chart-card" style="margin-bottom:20px">
+        <div class="chart-card-header"><h3 class="chart-title">Cross-Team Project Coverage</h3><span style="font-size:11px;color:var(--muted);margin-left:8px">Hours logged per team per project</span></div>
+        <div id="teamCoverageTable" style="padding:4px 0 8px;overflow-x:auto"></div>
+      </div>
+
+      <!-- Weekly activity heatmap -->
+      <div class="chart-card">
+        <div class="chart-card-header"><h3 class="chart-title">Weekly Activity Heatmap</h3><span style="font-size:11px;color:var(--muted);margin-left:8px">Hours per member per week — color intensity = relative output</span></div>
+        <div id="teamHeatmap" style="padding:4px 0 8px;overflow-x:auto"></div>
+      </div>
+    </div>
+  </div><!-- /teamContent -->
 </main>
 
 <!-- ══════════════════════ CHART EXPAND MODAL ══════════════════════ -->
@@ -1176,6 +1235,7 @@ const S = {
   activeView: 'dashboard', // 'dashboard' | 'kanban'
   activeBoards: [],     // boards currently loaded (for Kanban column layout)
   kanbanGroupByTeam: true,
+  teamAnalyticsWeeks: 12,
 };
 
 // ═══════════════════════════════════════════════════════
@@ -2201,8 +2261,8 @@ function showLoading() {
 function showDashboard() {
   document.getElementById('emptyState').style.display       = 'none';
   document.getElementById('loadingState').style.display     = 'none';
-  // Don't reveal dashboard/date-bar when user is on the Kanban tab
-  if (S.activeView !== 'kanban') {
+  // Don't reveal dashboard/date-bar when user is on another tab
+  if (S.activeView !== 'kanban' && S.activeView !== 'history' && S.activeView !== 'team') {
     document.getElementById('dashboardContent').style.display = '';
     document.getElementById('dateBar').style.display          = '';
   }
@@ -2693,6 +2753,7 @@ function loadTeams(boards, label) {
   populateJobFilter();
   renderKanban();
   if (S.activeView === 'history') renderProjectHistory();
+  if (S.activeView === 'team')    renderTeamAnalytics();
 
   const fetched = new Date(S.jsonData.fetchedAt);
   const teamCount = boards.length;
@@ -2707,16 +2768,20 @@ function switchView(view) {
   const isDash   = view === 'dashboard';
   const isKanban = view === 'kanban';
   const isHist   = view === 'history';
+  const isTeam   = view === 'team';
   document.getElementById('tabDashboard').classList.toggle('active', isDash);
   document.getElementById('tabKanban').classList.toggle('active', isKanban);
   document.getElementById('tabHistory').classList.toggle('active', isHist);
+  document.getElementById('tabTeam').classList.toggle('active', isTeam);
   document.getElementById('dashboardContent').style.display = isDash   ? '' : 'none';
   document.getElementById('kanbanContent').style.display    = isKanban ? '' : 'none';
   document.getElementById('histContent').style.display      = isHist   ? '' : 'none';
+  document.getElementById('teamContent').style.display      = isTeam   ? '' : 'none';
   // The date range bar only applies to the time-tracking dashboard
   document.getElementById('dateBar').style.display = isDash ? '' : 'none';
   if (isKanban) { populateJobFilter(); renderKanban(); }
   if (isHist)   { populateHistJobFilter(); renderProjectHistory(); }
+  if (isTeam)   { renderTeamAnalytics(); }
 }
 
 // ═══════════════════════════════════════════════════════
@@ -2928,6 +2993,239 @@ function renderProjectHistory() {
       scales: { x: baseScales.x, y: { ...baseScales.y, grid: { display: false } } },
     }
   });
+}
+
+// ═══════════════════════════════════════════════════════
+//  TEAM ANALYTICS TAB
+// ═══════════════════════════════════════════════════════
+function onTeamPeriodChange() {
+  S.teamAnalyticsWeeks = parseInt(document.getElementById('teamPeriodSel')?.value || '12');
+  renderTeamAnalytics();
+}
+
+function renderTeamAnalytics() {
+  if (!S.processed) return;
+
+  const weeksBack = S.teamAnalyticsWeeks || 12;
+  const now = new Date();
+  const cutoff = weeksBack === 0 ? null
+    : new Date(now.getTime() - weeksBack * 7 * 86400000).toISOString().slice(0, 10);
+
+  const weekOf = ds => {
+    const d = new Date(ds + 'T12:00:00');
+    const dow = d.getDay();
+    d.setDate(d.getDate() - dow + (dow === 0 ? -6 : 1));
+    return d.toISOString().slice(0, 10);
+  };
+
+  const entries = (S.processed.allEntries || []).filter(e => !cutoff || e.dateKey >= cutoff);
+  const noDataEl = document.getElementById('teamNoData');
+  const statsEl  = document.getElementById('teamStats');
+
+  if (!entries.length) {
+    if (noDataEl) noDataEl.style.display = '';
+    if (statsEl)  statsEl.style.display  = 'none';
+    ['teamType','teamAlloc'].forEach(id => destroyChart(id));
+    const cov  = document.getElementById('teamCoverageTable');
+    const heat = document.getElementById('teamHeatmap');
+    if (cov)  cov.innerHTML  = '';
+    if (heat) heat.innerHTML = '';
+    return;
+  }
+  if (noDataEl) noDataEl.style.display = 'none';
+  if (statsEl)  statsEl.style.display  = '';
+
+  // --- Lookups & pre-aggregation ---
+  const issueByKey = Object.fromEntries((S.issues || []).map(i => [i.key, i]));
+  const issueSecMap = {};
+  entries.forEach(e => { issueSecMap[e.issueKey] = (issueSecMap[e.issueKey] || 0) + e.seconds; });
+
+  // [A] Avg hours per ticket by type
+  const typeMap = {};
+  entries.forEach(e => {
+    const type = issueByKey[e.issueKey]?.fields?.issuetype?.name || 'Unknown';
+    if (!typeMap[type]) typeMap[type] = { seconds: 0, keys: new Set() };
+    typeMap[type].seconds += e.seconds;
+    typeMap[type].keys.add(e.issueKey);
+  });
+
+  // [B] Member allocation by project
+  const memberAlloc = {};
+  const memberTotal = {};
+  entries.forEach(e => {
+    const job = jobNumberOf(issueByKey[e.issueKey]) || '(no project)';
+    if (!memberAlloc[e.assignee]) { memberAlloc[e.assignee] = {}; memberTotal[e.assignee] = 0; }
+    memberAlloc[e.assignee][job] = (memberAlloc[e.assignee][job] || 0) + e.seconds;
+    memberTotal[e.assignee] += e.seconds;
+  });
+  const members = Object.keys(memberTotal).sort((a, b) => memberTotal[b] - memberTotal[a]);
+
+  // [C] Cross-team project coverage
+  const coverage = {};
+  (S.issues || []).forEach(issue => {
+    const secs = issueSecMap[issue.key] || 0;
+    if (!secs) return;
+    const job  = jobNumberOf(issue) || '(other)';
+    const team = issue._team || 'Unknown';
+    if (!coverage[job]) coverage[job] = {};
+    coverage[job][team] = (coverage[job][team] || 0) + secs;
+  });
+
+  // [D] Heatmap: member -> week -> seconds
+  const heatData = {};
+  entries.forEach(e => {
+    const wk = weekOf(e.dateKey);
+    if (!heatData[e.assignee]) heatData[e.assignee] = {};
+    heatData[e.assignee][wk] = (heatData[e.assignee][wk] || 0) + e.seconds;
+  });
+
+  // Build complete week list for heatmap
+  const firstDateKey = entries.map(e => e.dateKey).sort()[0];
+  const startWk = weekOf(cutoff || firstDateKey);
+  const endWk   = weekOf(now.toISOString().slice(0, 10));
+  const allWeeks = [];
+  const wkCur = new Date(startWk + 'T12:00:00');
+  const wkEnd = new Date(endWk   + 'T12:00:00');
+  while (wkCur <= wkEnd) { allWeeks.push(wkCur.toISOString().slice(0, 10)); wkCur.setDate(wkCur.getDate() + 7); }
+
+  // --- Stats ---
+  const totalSecs = entries.reduce((s, e) => s + e.seconds, 0);
+  const avgPerMemberPerWeek = members.length && allWeeks.length
+    ? totalSecs / members.length / allWeeks.length : 0;
+  document.getElementById('teamStatMembers').textContent  = members.length;
+  document.getElementById('teamStatHours').textContent    = fmtHours(secToHours(totalSecs));
+  document.getElementById('teamStatAvgWeek').textContent  = fmtHours(secToHours(avgPerMemberPerWeek));
+  document.getElementById('teamStatProjects').textContent = Object.keys(coverage).length;
+
+  const isDark    = document.documentElement.getAttribute('data-theme') === 'dark';
+  const gridColor = isDark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.06)';
+  const tickColor = isDark ? '#7a88aa' : '#5E6C84';
+  const PALETTE   = ['#4C9AFF','#36B37E','#FF8B00','#6554C0','#00B8D9','#FF5630','#FFAB00','#00C7E6','#79E2F2','#ABF5D1'];
+
+  // --- Chart A: Avg hours per ticket by type (horizontal bar) ---
+  destroyChart('teamType');
+  const typeRows = Object.entries(typeMap)
+    .map(([t, d]) => ({ type: t, avg: d.seconds / d.keys.size, count: d.keys.size }))
+    .sort((a, b) => b.avg - a.avg);
+  const tCtx = document.getElementById('teamTypeChart')?.getContext('2d');
+  if (tCtx) S.charts['teamType'] = new Chart(tCtx, {
+    type: 'bar',
+    data: {
+      labels: typeRows.map(r => `${r.type} (${r.count})`),
+      datasets: [{
+        label: 'Avg Hours',
+        data: typeRows.map(r => +secToHours(r.avg).toFixed(2)),
+        backgroundColor: typeRows.map((_, i) => PALETTE[i % PALETTE.length] + 'CC'),
+        borderColor:     typeRows.map((_, i) => PALETTE[i % PALETTE.length]),
+        borderWidth: 1, borderRadius: 4,
+      }]
+    },
+    options: {
+      indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false }, tooltip: { callbacks: { label: ctx => ` ${ctx.parsed.x}h avg per ticket` } } },
+      scales: {
+        x: { ticks: { color: tickColor, font: { size: 10 } }, grid: { color: gridColor }, beginAtZero: true },
+        y: { ticks: { color: tickColor, font: { size: 11 } }, grid: { display: false } },
+      },
+    }
+  });
+
+  // --- Chart B: Member allocation by project (stacked horizontal bar) ---
+  destroyChart('teamAlloc');
+  const allJobs = [...new Set(Object.values(memberAlloc).flatMap(m => Object.keys(m)))].sort((a, b) => +a - +b || a.localeCompare(b));
+  const aCtx = document.getElementById('teamAllocChart')?.getContext('2d');
+  if (aCtx && members.length) S.charts['teamAlloc'] = new Chart(aCtx, {
+    type: 'bar',
+    data: {
+      labels: members,
+      datasets: allJobs.map((job, i) => ({
+        label: job,
+        data: members.map(m => +secToHours(memberAlloc[m]?.[job] || 0).toFixed(2)),
+        backgroundColor: PALETTE[i % PALETTE.length] + 'BB',
+        borderColor:     PALETTE[i % PALETTE.length],
+        borderWidth: 1,
+      }))
+    },
+    options: {
+      indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { labels: { color: tickColor, font: { size: 10 }, boxWidth: 10, padding: 8 }, position: 'bottom' } },
+      scales: {
+        x: { ticks: { color: tickColor, font: { size: 10 } }, grid: { color: gridColor }, beginAtZero: true, stacked: true },
+        y: { ticks: { color: tickColor, font: { size: 11 } }, grid: { display: false }, stacked: true },
+      },
+    }
+  });
+
+  // --- Table C: Cross-team project coverage ---
+  const covJobs  = Object.keys(coverage).sort((a, b) => +a - +b || a.localeCompare(b));
+  const knownTeams = ['M4 CAD', 'M4 Field Tech', 'M4 GIS'];
+  const covTeams = knownTeams.filter(t => covJobs.some(j => coverage[j]?.[t]));
+  const maxCovSecs = Math.max(...covJobs.flatMap(j => covTeams.map(t => coverage[j]?.[t] || 0)), 1);
+
+  const covHtml = covJobs.length ? `
+    <table class="team-coverage">
+      <thead><tr>
+        <th>Project #</th>
+        ${covTeams.map(t => `<th style="text-align:center">${escapeHtml(t)}</th>`).join('')}
+        <th style="text-align:center">Teams Active</th>
+      </tr></thead>
+      <tbody>
+        ${covJobs.map(job => {
+          const active = covTeams.filter(t => (coverage[job]?.[t] || 0) > 0).length;
+          return `<tr>
+            <td class="proj-label">${escapeHtml(job)}</td>
+            ${covTeams.map(t => {
+              const secs = coverage[job]?.[t] || 0;
+              const opacity = secs ? (0.15 + 0.7 * secs / maxCovSecs).toFixed(2) : '0';
+              const bg = secs ? `background:rgba(76,154,255,${opacity});` : '';
+              const color = secs ? 'color:var(--text)' : 'color:var(--muted)';
+              return `<td class="cov-cell" style="${bg}${color}">${secs ? fmtHours(secToHours(secs)) : '—'}</td>`;
+            }).join('')}
+            <td style="text-align:center;font-weight:700;color:${active > 1 ? 'var(--orange)' : 'var(--muted)'}">
+              ${active > 1 ? `&#9650; ${active}` : active}
+            </td>
+          </tr>`;
+        }).join('')}
+      </tbody>
+    </table>` : '<div class="hist-no-data" style="display:block">No cross-team data yet.</div>';
+  document.getElementById('teamCoverageTable').innerHTML = covHtml;
+
+  // --- Heatmap D: member × week ---
+  const fmtWkLabel = wk => {
+    const d = new Date(wk + 'T12:00:00');
+    return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  };
+  const memberMaxes = {};
+  members.forEach(m => {
+    memberMaxes[m] = Math.max(...allWeeks.map(wk => heatData[m]?.[wk] || 0), 1);
+  });
+  const emptyBg = isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.04)';
+
+  const heatHtml = members.length ? `
+    <table class="team-heatmap">
+      <thead><tr>
+        <th>Member</th>
+        ${allWeeks.map(wk => `<th style="min-width:44px;text-align:center">${fmtWkLabel(wk)}</th>`).join('')}
+        <th style="text-align:right">Total</th>
+      </tr></thead>
+      <tbody>
+        ${members.map(m => {
+          const total = memberTotal[m] || 0;
+          return `<tr>
+            <td class="member-name">${escapeHtml(m)}</td>
+            ${allWeeks.map(wk => {
+              const secs = heatData[m]?.[wk] || 0;
+              const heat = secs / memberMaxes[m];
+              const bg = secs ? `background:rgba(76,154,255,${(0.15 + heat * 0.75).toFixed(2)})` : `background:${emptyBg}`;
+              const txt = secs ? fmtHours(secToHours(secs)) : '<span style="opacity:.3">—</span>';
+              return `<td class="heat-cell" style="${bg}">${txt}</td>`;
+            }).join('')}
+            <td style="font-weight:700;color:var(--text);text-align:right;white-space:nowrap">${fmtHours(secToHours(total))}</td>
+          </tr>`;
+        }).join('')}
+      </tbody>
+    </table>` : '<div class="hist-no-data" style="display:block">No member data yet.</div>';
+  document.getElementById('teamHeatmap').innerHTML = heatHtml;
 }
 
 function toggleKanbanGrouping() {
