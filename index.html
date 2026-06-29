@@ -3271,13 +3271,24 @@ function renderKanban() {
   // every column shows (even empty ones), in board order. Merge across the
   // selected teams: union of column names (first-seen order, case-insensitive
   // dedup) + a combined statusId → column map.
+  //
+  // COLUMN_ALIASES: maps a lowercase column name from one board to the
+  // canonical key+label used on another board, so differently-named columns
+  // that represent the same stage are merged into a single column.
+  const COLUMN_ALIASES = {
+    'pending/sent to check': { key: 'pending/need info', label: 'Pending/Need Info' },
+  };
+
   const orderedNames = [];
-  const nameLower    = {};   // lowercase -> canonical column name (first seen wins)
-  const statusToCol  = {};   // statusId  -> columnName
+  const nameLower    = {};   // lowercase canonical key -> display name
+  const statusToCol  = {};   // statusId -> canonical display name
   (S.activeBoards || []).forEach(b => {
     (b.columns || []).forEach(col => {
-      const key = col.name.trim().toLowerCase();
-      if (!nameLower[key]) { nameLower[key] = col.name.trim(); orderedNames.push(col.name.trim()); }
+      const rawKey = col.name.trim().toLowerCase();
+      const alias  = COLUMN_ALIASES[rawKey];
+      const key    = alias ? alias.key   : rawKey;
+      const label  = alias ? alias.label : col.name.trim();
+      if (!nameLower[key]) { nameLower[key] = label; orderedNames.push(label); }
       (col.statusIds || []).forEach(sid => { statusToCol[sid] = nameLower[key]; });
     });
   });
@@ -3292,10 +3303,13 @@ function renderKanban() {
     let colName = statusToCol[sid];
     if (!colName) {
       // No board config (or unmapped status) — fall back to the status name,
-      // matching case-insensitively against existing columns.
+      // matching case-insensitively against existing columns (with alias support).
       const rawName = (i.fields?.status?.name || 'No Status').trim();
-      const key = rawName.toLowerCase();
-      colName = nameLower[key] || rawName;
+      const rawKey  = rawName.toLowerCase();
+      const alias   = COLUMN_ALIASES[rawKey];
+      const key     = alias ? alias.key   : rawKey;
+      const label   = alias ? alias.label : rawName;
+      colName = nameLower[key] || label;
       if (!nameLower[key]) { nameLower[key] = colName; buckets[colName] = []; orderedNames.push(colName); }
     }
     buckets[colName].push(i);
