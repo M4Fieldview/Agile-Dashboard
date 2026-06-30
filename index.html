@@ -1158,6 +1158,7 @@
         <input type="date" id="teamDateTo" onchange="renderTeamAnalytics()"
           style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:4px 8px;color:var(--text);font-size:12px">
       </div>
+      <span id="teamDateRangeLabel" style="font-size:12px;color:var(--muted);margin-left:8px"></span>
     </div>
     <div class="hist-content-inner">
       <div class="hist-stats" id="teamStats">
@@ -3052,6 +3053,19 @@ function renderTeamAnalytics() {
 
   const { from: cutoff, to: cutoffTo } = getTeamAnalyticsDates();
   const now = new Date();
+
+  // Show the resolved date range next to the selector
+  (function() {
+    const el = document.getElementById('teamDateRangeLabel');
+    if (!el) return;
+    const fmt = ds => {
+      const d = new Date(ds + 'T12:00:00');
+      return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+    };
+    const fromLabel = cutoff  ? fmt(cutoff)   : 'All time';
+    const toLabel   = cutoffTo ? fmt(cutoffTo) : fmt(now.toISOString().slice(0, 10));
+    el.textContent = cutoff ? `${fromLabel} – ${toLabel}` : `through ${toLabel}`;
+  })();
 
   const weekOf = ds => {
     const d = new Date(ds + 'T12:00:00');
