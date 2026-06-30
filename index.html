@@ -297,6 +297,8 @@
     .heat-cell { text-align: center; font-size: 10px; font-weight: 600; min-width: 40px; border-radius: 3px; }
     .team-coverage .cov-cell { text-align: center; font-weight: 600; border-radius: 3px; min-width: 80px; }
     .team-coverage .proj-label { font-weight: 700; font-family: monospace; font-size: 12px; white-space: nowrap; }
+    .export-csv-btn { margin-left: auto; font-size: 11px; font-weight: 600; padding: 3px 10px; background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); color: var(--muted); cursor: pointer; white-space: nowrap; }
+    .export-csv-btn:hover { border-color: var(--blue); color: var(--blue); }
 
     .kanban-bar {
       display: flex;
@@ -1176,14 +1178,14 @@
           <div class="chart-wrap" style="height:240px"><canvas id="teamTypeChart"></canvas></div>
         </div>
         <div class="chart-card" style="flex:1">
-          <div class="chart-card-header"><h3 class="chart-title">Member Allocation by Project</h3></div>
+          <div class="chart-card-header"><h3 class="chart-title">Member Allocation by Project</h3><button onclick="exportTeamAllocCSV()" class="export-csv-btn" title="Export as CSV (opens in Excel)">&#11015; Export</button></div>
           <div class="chart-wrap" style="height:240px"><canvas id="teamAllocChart"></canvas></div>
         </div>
       </div>
 
       <!-- Cross-team project coverage -->
       <div class="chart-card" style="margin-bottom:20px">
-        <div class="chart-card-header"><h3 class="chart-title">Cross-Team Project Coverage</h3><span style="font-size:11px;color:var(--muted);margin-left:8px">Hours logged per team per project</span></div>
+        <div class="chart-card-header"><h3 class="chart-title">Cross-Team Project Coverage</h3><span style="font-size:11px;color:var(--muted);margin-left:8px">Hours logged per team per project</span><button onclick="exportTeamCoverageCSV()" class="export-csv-btn" title="Export as CSV (opens in Excel)">&#11015; Export</button></div>
         <div id="teamCoverageTable" style="padding:4px 0 8px;overflow-x:auto"></div>
       </div>
 
@@ -3129,6 +3131,10 @@ function renderTeamAnalytics() {
     coverage[job][team] = (coverage[job][team] || 0) + secs;
   });
 
+  // Stash data for CSV export buttons
+  S._teamAllocExport   = { members, memberAlloc, memberTotal };
+  S._teamCovExport     = { coverage };
+
   // [D] Heatmap — daily buckets for short ranges (≤2 weeks), weekly otherwise
   const firstDateKey = entries.map(e => e.dateKey).sort()[0];
   const rangeMs = cutoff ? (new Date(cutoffTo) - new Date(cutoff + 'T00:00:00')) : Infinity;
@@ -3208,6 +3214,7 @@ function renderTeamAnalytics() {
   // --- Chart B: Member allocation by project (stacked horizontal bar) ---
   destroyChart('teamAlloc');
   const allJobs = [...new Set(Object.values(memberAlloc).flatMap(m => Object.keys(m)))].sort((a, b) => +a - +b || a.localeCompare(b));
+  S._teamAllocExport.allJobs = allJobs;
   const aCtx = document.getElementById('teamAllocChart')?.getContext('2d');
   if (aCtx && members.length) S.charts['teamAlloc'] = new Chart(aCtx, {
     type: 'bar',
@@ -3235,6 +3242,8 @@ function renderTeamAnalytics() {
   const covJobs  = Object.keys(coverage).sort((a, b) => +a - +b || a.localeCompare(b));
   const knownTeams = ['M4 CAD', 'M4 Field Tech', 'M4 GIS'];
   const covTeams = knownTeams.filter(t => covJobs.some(j => coverage[j]?.[t]));
+  S._teamCovExport.covJobs = covJobs;
+  S._teamCovExport.covTeams = covTeams;
   const maxCovSecs = Math.max(...covJobs.flatMap(j => covTeams.map(t => coverage[j]?.[t] || 0)), 1);
 
   const covHtml = covJobs.length ? `
@@ -3309,6 +3318,56 @@ function renderTeamAnalytics() {
   // Update subtitle to reflect daily vs weekly
   const heatSubEl = document.querySelector('#teamContent .chart-card:last-child .chart-card-header span');
   if (heatSubEl) heatSubEl.textContent = heatSubtitle;
+}
+
+// ═══════════════════════════════════════════════════════
+//  CSV EXPORT HELPERS
+// ═══════════════════════════════════════════════════════
+function downloadCSV(rows, filename) {
+  const csv = rows.map(r =>
+    r.map(v => `"${String(v === null || v === undefined ? '' : v).replace(/"/g, '""')}"`).join(',')
+  ).join('\r\n');
+  const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href = url; a.download = filename; a.style.display = 'none';
+  document.body.appendChild(a); a.click();
+  document.body.removeChild(a); URL.revokeObjectURL(url);
+}
+
+function exportTeamAllocCSV() {
+  const d = S._teamAllocExport;
+  if (!d) return;
+  const { members, memberAlloc, allJobs } = d;
+  const dateRange = document.getElementById('teamDateRangeLabel')?.textContent || '';
+  const rows = [
+    [`Member Allocation by Project — ${dateRange}`],
+    [],
+    ['Member', ...allJobs, 'Total Hours'],
+  ];
+  members.forEach(m => {
+    const total = +secToHours(Object.values(memberAlloc[m] || {}).reduce((s, v) => s + v, 0)).toFixed(2);
+    rows.push([m, ...allJobs.map(j => +secToHours(memberAlloc[m]?.[j] || 0).toFixed(2)), total]);
+  });
+  downloadCSV(rows, 'member_allocation_by_project.csv');
+}
+
+function exportTeamCoverageCSV() {
+  const d = S._teamCovExport;
+  if (!d) return;
+  const { coverage, covJobs, covTeams } = d;
+  const dateRange = document.getElementById('teamDateRangeLabel')?.textContent || '';
+  const rows = [
+    [`Cross-Team Project Coverage — ${dateRange}`],
+    [],
+    ['Project #', ...covTeams, 'Teams Active', 'Total Hours'],
+  ];
+  covJobs.forEach(job => {
+    const active = covTeams.filter(t => (coverage[job]?.[t] || 0) > 0).length;
+    const total  = +secToHours(covTeams.reduce((s, t) => s + (coverage[job]?.[t] || 0), 0)).toFixed(2);
+    rows.push([job, ...covTeams.map(t => +secToHours(coverage[job]?.[t] || 0).toFixed(2)), active, total]);
+  });
+  downloadCSV(rows, 'cross_team_project_coverage.csv');
 }
 
 function toggleKanbanGrouping() {
