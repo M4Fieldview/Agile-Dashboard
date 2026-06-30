@@ -3129,22 +3129,39 @@ function renderTeamAnalytics() {
     coverage[job][team] = (coverage[job][team] || 0) + secs;
   });
 
-  // [D] Heatmap: member -> week -> seconds
-  const heatData = {};
-  entries.forEach(e => {
-    const wk = weekOf(e.dateKey);
-    if (!heatData[e.assignee]) heatData[e.assignee] = {};
-    heatData[e.assignee][wk] = (heatData[e.assignee][wk] || 0) + e.seconds;
-  });
-
-  // Build complete week list for heatmap
+  // [D] Heatmap — daily buckets for short ranges (≤2 weeks), weekly otherwise
   const firstDateKey = entries.map(e => e.dateKey).sort()[0];
-  const startWk = weekOf(cutoff || firstDateKey);
-  const endWk   = weekOf(cutoffTo);
-  const allWeeks = [];
-  const wkCur = new Date(startWk + 'T12:00:00');
-  const wkEnd = new Date(endWk   + 'T12:00:00');
-  while (wkCur <= wkEnd) { allWeeks.push(wkCur.toISOString().slice(0, 10)); wkCur.setDate(wkCur.getDate() + 7); }
+  const rangeMs = cutoff ? (new Date(cutoffTo) - new Date(cutoff + 'T00:00:00')) : Infinity;
+  const useDailyBuckets = rangeMs <= 14 * 86400000;
+
+  const heatData = {};
+  if (useDailyBuckets) {
+    entries.forEach(e => {
+      if (!heatData[e.assignee]) heatData[e.assignee] = {};
+      heatData[e.assignee][e.dateKey] = (heatData[e.assignee][e.dateKey] || 0) + e.seconds;
+    });
+  } else {
+    entries.forEach(e => {
+      const wk = weekOf(e.dateKey);
+      if (!heatData[e.assignee]) heatData[e.assignee] = {};
+      heatData[e.assignee][wk] = (heatData[e.assignee][wk] || 0) + e.seconds;
+    });
+  }
+
+  // Build complete bucket list (daily or weekly) for column headers
+  const allBuckets = [];
+  if (useDailyBuckets) {
+    const bkCur = new Date((cutoff || firstDateKey) + 'T12:00:00');
+    const bkEnd = new Date(cutoffTo + 'T12:00:00');
+    while (bkCur <= bkEnd) { allBuckets.push(bkCur.toISOString().slice(0, 10)); bkCur.setDate(bkCur.getDate() + 1); }
+  } else {
+    const startWk = weekOf(cutoff || firstDateKey);
+    const endWk   = weekOf(cutoffTo);
+    const wkCur = new Date(startWk + 'T12:00:00');
+    const wkEnd = new Date(endWk   + 'T12:00:00');
+    while (wkCur <= wkEnd) { allBuckets.push(wkCur.toISOString().slice(0, 10)); wkCur.setDate(wkCur.getDate() + 7); }
+  }
+  const allWeeks = allBuckets; // alias for stats below
 
   // --- Stats ---
   const totalSecs = entries.reduce((s, e) => s + e.seconds, 0);
@@ -3248,22 +3265,27 @@ function renderTeamAnalytics() {
     </table>` : '<div class="hist-no-data" style="display:block">No cross-team data yet.</div>';
   document.getElementById('teamCoverageTable').innerHTML = covHtml;
 
-  // --- Heatmap D: member × week ---
-  const fmtWkLabel = wk => {
-    const d = new Date(wk + 'T12:00:00');
-    return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  // --- Heatmap D: member × bucket (daily or weekly) ---
+  const fmtBucketLabel = bk => {
+    const d = new Date(bk + 'T12:00:00');
+    return useDailyBuckets
+      ? d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })
+      : d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
   };
   const memberMaxes = {};
   members.forEach(m => {
-    memberMaxes[m] = Math.max(...allWeeks.map(wk => heatData[m]?.[wk] || 0), 1);
+    memberMaxes[m] = Math.max(...allBuckets.map(bk => heatData[m]?.[bk] || 0), 1);
   });
   const emptyBg = isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.04)';
+  const heatSubtitle = useDailyBuckets
+    ? 'Hours per member per day — color intensity = relative output'
+    : 'Hours per member per week — color intensity = relative output';
 
   const heatHtml = members.length ? `
     <table class="team-heatmap">
       <thead><tr>
         <th>Member</th>
-        ${allWeeks.map(wk => `<th style="min-width:44px;text-align:center">${fmtWkLabel(wk)}</th>`).join('')}
+        ${allBuckets.map(bk => `<th style="min-width:${useDailyBuckets ? 64 : 44}px;text-align:center">${fmtBucketLabel(bk)}</th>`).join('')}
         <th style="text-align:right">Total</th>
       </tr></thead>
       <tbody>
@@ -3271,8 +3293,8 @@ function renderTeamAnalytics() {
           const total = memberTotal[m] || 0;
           return `<tr>
             <td class="member-name">${escapeHtml(m)}</td>
-            ${allWeeks.map(wk => {
-              const secs = heatData[m]?.[wk] || 0;
+            ${allBuckets.map(bk => {
+              const secs = heatData[m]?.[bk] || 0;
               const heat = secs / memberMaxes[m];
               const bg = secs ? `background:rgba(76,154,255,${(0.15 + heat * 0.75).toFixed(2)})` : `background:${emptyBg}`;
               const txt = secs ? fmtHours(secToHours(secs)) : '<span style="opacity:.3">—</span>';
@@ -3284,6 +3306,9 @@ function renderTeamAnalytics() {
       </tbody>
     </table>` : '<div class="hist-no-data" style="display:block">No member data yet.</div>';
   document.getElementById('teamHeatmap').innerHTML = heatHtml;
+  // Update subtitle to reflect daily vs weekly
+  const heatSubEl = document.querySelector('#teamContent .chart-card:last-child .chart-card-header span');
+  if (heatSubEl) heatSubEl.textContent = heatSubtitle;
 }
 
 function toggleKanbanGrouping() {
