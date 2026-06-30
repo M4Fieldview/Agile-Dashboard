@@ -1144,13 +1144,20 @@
     <div class="hist-bar">
       <label for="teamPeriodSel" style="font-size:12px;font-weight:600;color:var(--muted)">Period</label>
       <select id="teamPeriodSel" onchange="onTeamPeriodChange()">
-        <option value="4">Last 4 weeks</option>
-        <option value="8">Last 8 weeks</option>
-        <option value="12" selected>Last 12 weeks</option>
-        <option value="26">Last 6 months</option>
-        <option value="52">Last 12 months</option>
-        <option value="0">All time</option>
+        <option value="week">This week</option>
+        <option value="month" selected>This month</option>
+        <option value="3months">Last 3 months</option>
+        <option value="6months">Last 6 months</option>
+        <option value="year">Last year</option>
+        <option value="custom">Custom range</option>
       </select>
+      <div id="teamCustomRange" style="display:none;align-items:center;gap:6px;margin-left:4px">
+        <input type="date" id="teamDateFrom" onchange="renderTeamAnalytics()"
+          style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:4px 8px;color:var(--text);font-size:12px">
+        <span style="color:var(--muted);font-size:12px">to</span>
+        <input type="date" id="teamDateTo" onchange="renderTeamAnalytics()"
+          style="background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:4px 8px;color:var(--text);font-size:12px">
+      </div>
     </div>
     <div class="hist-content-inner">
       <div class="hist-stats" id="teamStats">
@@ -1235,7 +1242,7 @@ const S = {
   activeView: 'dashboard', // 'dashboard' | 'kanban'
   activeBoards: [],     // boards currently loaded (for Kanban column layout)
   kanbanGroupByTeam: true,
-  teamAnalyticsWeeks: 12,
+  teamAnalyticsPeriod: 'month',
 };
 
 // ═══════════════════════════════════════════════════════
@@ -2998,18 +3005,53 @@ function renderProjectHistory() {
 // ═══════════════════════════════════════════════════════
 //  TEAM ANALYTICS TAB
 // ═══════════════════════════════════════════════════════
+function getTeamAnalyticsDates() {
+  const period = document.getElementById('teamPeriodSel')?.value || 'month';
+  const today  = new Date();
+  const toStr  = today.toISOString().slice(0, 10);
+  let fromStr;
+  switch (period) {
+    case 'week': {
+      const d = new Date(today);
+      const dow = d.getDay();
+      d.setDate(d.getDate() - (dow === 0 ? 6 : dow - 1)); // back to Monday
+      fromStr = d.toISOString().slice(0, 10);
+      break;
+    }
+    case 'month':
+      fromStr = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().slice(0, 10);
+      break;
+    case '3months':
+      fromStr = new Date(today.getFullYear(), today.getMonth() - 3, 1).toISOString().slice(0, 10);
+      break;
+    case '6months':
+      fromStr = new Date(today.getFullYear(), today.getMonth() - 6, 1).toISOString().slice(0, 10);
+      break;
+    case 'year':
+      fromStr = new Date(today.getFullYear() - 1, today.getMonth(), today.getDate()).toISOString().slice(0, 10);
+      break;
+    case 'custom':
+      fromStr = document.getElementById('teamDateFrom')?.value || null;
+      return { from: fromStr, to: document.getElementById('teamDateTo')?.value || toStr };
+    default:
+      fromStr = null;
+  }
+  return { from: fromStr, to: toStr };
+}
+
 function onTeamPeriodChange() {
-  S.teamAnalyticsWeeks = parseInt(document.getElementById('teamPeriodSel')?.value || '12');
-  renderTeamAnalytics();
+  S.teamAnalyticsPeriod = document.getElementById('teamPeriodSel')?.value || 'month';
+  const isCustom = S.teamAnalyticsPeriod === 'custom';
+  const customEl = document.getElementById('teamCustomRange');
+  if (customEl) customEl.style.display = isCustom ? 'flex' : 'none';
+  if (!isCustom) renderTeamAnalytics();
 }
 
 function renderTeamAnalytics() {
   if (!S.processed) return;
 
-  const weeksBack = S.teamAnalyticsWeeks || 12;
+  const { from: cutoff, to: cutoffTo } = getTeamAnalyticsDates();
   const now = new Date();
-  const cutoff = weeksBack === 0 ? null
-    : new Date(now.getTime() - weeksBack * 7 * 86400000).toISOString().slice(0, 10);
 
   const weekOf = ds => {
     const d = new Date(ds + 'T12:00:00');
@@ -3018,7 +3060,9 @@ function renderTeamAnalytics() {
     return d.toISOString().slice(0, 10);
   };
 
-  const entries = (S.processed.allEntries || []).filter(e => !cutoff || e.dateKey >= cutoff);
+  const entries = (S.processed.allEntries || []).filter(e =>
+    (!cutoff || e.dateKey >= cutoff) && e.dateKey <= cutoffTo
+  );
   const noDataEl = document.getElementById('teamNoData');
   const statsEl  = document.getElementById('teamStats');
 
@@ -3082,7 +3126,7 @@ function renderTeamAnalytics() {
   // Build complete week list for heatmap
   const firstDateKey = entries.map(e => e.dateKey).sort()[0];
   const startWk = weekOf(cutoff || firstDateKey);
-  const endWk   = weekOf(now.toISOString().slice(0, 10));
+  const endWk   = weekOf(cutoffTo);
   const allWeeks = [];
   const wkCur = new Date(startWk + 'T12:00:00');
   const wkEnd = new Date(endWk   + 'T12:00:00');
