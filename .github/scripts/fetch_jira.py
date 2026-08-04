@@ -20,6 +20,7 @@ import sys
 import urllib.error
 import urllib.parse
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta, timezone
 
 # ── Config ───────────────────────────────────────────────────────────────────
@@ -248,10 +249,24 @@ def fetch_worklogs(issue_key):
 
 
 def attach_worklogs(issues):
-    for i, issue in enumerate(issues):
+    """Fetch worklogs for all issues in parallel (10 concurrent requests)."""
+    if not issues:
+        return issues
+
+    def _fetch_one(issue):
         issue['worklogs'] = fetch_worklogs(issue['key'])
-        if (i + 1) % 10 == 0:
-            print(f'      {i + 1}/{len(issues)} worklogs done…', file=sys.stderr)
+        return issue
+
+    completed = 0
+    with ThreadPoolExecutor(max_workers=10) as executor:
+        futures = {executor.submit(_fetch_one, issue): issue for issue in issues}
+        for future in as_completed(futures):
+            future.result()  # re-raise any exception
+            completed += 1
+            if completed % 20 == 0:
+                print(f'      {completed}/{len(issues)} worklogs done…', file=sys.stderr)
+
+    print(f'      {len(issues)}/{len(issues)} worklogs done.', file=sys.stderr)
     return issues
 
 

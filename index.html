@@ -2507,7 +2507,16 @@ async function refreshDashboard() {
         setHeaderStatus('✓ Fetched — new data deploying, will appear shortly');
       }
     } else {
-      setHeaderStatus('⚠ Refresh timed out — showing cached data');
+      // Workflow poll window closed, but the run may still complete shortly.
+      // Give it one more check against data.json before declaring failure.
+      setHeaderStatus('⟳ Workflow taking longer than expected — checking for updated data…');
+      const fresh = await pollForFreshData(prevFetchedAt, 90000); // 90 s grace period
+      if (fresh?.boards?.length && fresh.fetchedAt !== prevFetchedAt) {
+        activateJsonMode(fresh);
+        setHeaderStatus(`✓ Updated · ${new Date(fresh.fetchedAt).toLocaleTimeString()}`);
+      } else {
+        setHeaderStatus('⚠ Refresh timed out — showing cached data');
+      }
     }
     btn.disabled = false;
     resetAutoRefreshCountdown();
@@ -2620,7 +2629,7 @@ async function triggerAndWaitForWorkflow() {
   }
 
   // Wait for GitHub to register the run, then poll for completion
-  const TIMEOUT_MS = 5 * 60 * 1000;
+  const TIMEOUT_MS = 10 * 60 * 1000; // 10 min — Actions runner startup alone can take 2-3 min
   const start = Date.now();
   await new Promise(r => setTimeout(r, 6000));
 
