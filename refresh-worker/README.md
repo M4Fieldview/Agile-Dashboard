@@ -19,19 +19,34 @@ The GitHub token lives in Cloudflare's secret store (server-side). Nothing is
 stored in the browser, so clearing the browser cache cannot break it. The
 workflow's own `schedule:` trigger is left in place as a slow fallback.
 
-## Setup
+## Setup A — from the Cloudflare dashboard (no Node.js needed)
 
-Requires a free Cloudflare account. Run everything from this directory.
+Use this if `node`/`npx` aren't installed. Everything happens in the browser.
+
+1. Create the GitHub token (see **Token** below).
+2. https://dash.cloudflare.com → **Workers & Pages** → **Create** → **Create Worker**.
+3. Name it `agile-dashboard-refresh` → **Deploy** (the placeholder code is fine for now).
+4. **Edit code** → delete the placeholder → paste all of [`src/index.js`](src/index.js) → **Deploy**.
+5. **Settings** → **Variables and Secrets** → **Add**:
+   - Type **Secret**, name `GH_PAT`, value = your token → **Deploy**.
+   - No other variables are needed; owner/repo/workflow/branch have defaults
+     baked into the code. Add plain-text variables of the same name only if you
+     want to override them.
+6. **Settings** → **Triggers** → **Cron Triggers** → **Add Cron Trigger** →
+   `*/5 * * * *` → save.
+
+Verify: within ~5 minutes a run with event `workflow_dispatch` should appear at
+https://github.com/M4Fieldview/Agile-Dashboard/actions — and the dashboard's
+age should stop climbing past ~5 minutes. The Worker's **Logs** tab shows
+`Dispatched fetch-jira-data.yml on main` on success.
+
+## Setup B — from the command line
+
+Requires Node.js and a free Cloudflare account. Run from this directory.
 
 ### 1. Create a GitHub token
 
-Fine-grained token at https://github.com/settings/personal-access-tokens/new
-
-- **Repository access** → Only select repositories → `M4Fieldview/Agile-Dashboard`
-- **Repository permissions** → **Actions: Read and write** (this is the only one needed)
-- **Expiration** → as long as you're comfortable with. If it expires the
-  dashboard silently stops updating, so set a calendar reminder, or use "No
-  expiration" and accept the tradeoff.
+See **Token** below, then continue.
 
 ### 2. Deploy
 
@@ -72,6 +87,24 @@ To watch the deployed Worker's live logs:
 ```bash
 npx wrangler tail
 ```
+
+## Token
+
+Fine-grained token at https://github.com/settings/personal-access-tokens/new
+
+- **Resource owner** → `M4Fieldview`
+- **Repository access** → **Only select repositories** → `Agile-Dashboard`.
+  Do *not* pick "Public repositories" — that is read-only and cannot dispatch
+  a workflow.
+- **Repository permissions** → **Actions: Read and write**. That is the only
+  one needed; `Metadata: Read-only` is added automatically.
+- **Expiration** → your call. If it expires the dashboard silently stops
+  updating, so either set a calendar reminder or choose no expiration.
+
+Because the resource owner is an organization, the token may come back
+**pending approval** — an org owner has to approve it under
+Organization settings → Personal access tokens. A classic token with the `repo`
+scope works immediately and skips that, at the cost of broader access.
 
 ## Repo growth — read this before lowering the interval
 

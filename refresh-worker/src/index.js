@@ -3,9 +3,12 @@
  *
  * Why this exists:
  *   GitHub treats `schedule:` cron triggers as best-effort and throttles them
- *   heavily. The workflow asks for */5 but in practice fired every 1-10 hours,
- *   leaving the dashboard hours stale. This Worker runs on Cloudflare's own
- *   cron (which is reliable) and pokes GitHub's workflow_dispatch API instead.
+ *   heavily. The workflow asks for a five-minute schedule but in practice fired
+ *   every 1-10 hours, leaving the dashboard hours stale. This Worker runs on
+ *   Cloudflare's own cron (reliable) and calls workflow_dispatch instead.
+ *
+ *   (Careful writing cron expressions in this comment: a slash-star sequence
+ *   would close the block comment and break the file.)
  *
  * Why a Worker rather than a token in the browser:
  *   The GitHub PAT lives in Cloudflare's secret store, server-side. Nothing is
@@ -16,6 +19,17 @@
  * runs. Scheduled invocation only.
  */
 
+// Defaults so the only thing that MUST be configured is the GH_PAT secret.
+// This matters when deploying from the Cloudflare dashboard by hand: one
+// secret to set instead of five variables to type correctly. Each can still
+// be overridden with a plain-text variable of the same name.
+const DEFAULTS = {
+  GH_OWNER:    'M4Fieldview',
+  GH_REPO:     'Agile-Dashboard',
+  GH_WORKFLOW: 'fetch-jira-data.yml',
+  GH_REF:      'main',
+};
+
 export default {
   async scheduled(event, env, ctx) {
     // waitUntil so the Worker isn't killed before the API call completes.
@@ -24,15 +38,17 @@ export default {
 };
 
 async function dispatchWorkflow(env) {
-  const missing = ['GH_PAT', 'GH_OWNER', 'GH_REPO', 'GH_WORKFLOW'].filter(k => !env[k]);
-  if (missing.length) {
-    console.error(`Not configured — missing: ${missing.join(', ')}`);
+  if (!env.GH_PAT) {
+    console.error('Not configured — the GH_PAT secret is missing.');
     return;
   }
 
-  const ref = env.GH_REF || 'main';
-  const url = `https://api.github.com/repos/${env.GH_OWNER}/${env.GH_REPO}` +
-              `/actions/workflows/${env.GH_WORKFLOW}/dispatches`;
+  const owner    = env.GH_OWNER    || DEFAULTS.GH_OWNER;
+  const repo     = env.GH_REPO     || DEFAULTS.GH_REPO;
+  const workflow = env.GH_WORKFLOW || DEFAULTS.GH_WORKFLOW;
+  const ref      = env.GH_REF      || DEFAULTS.GH_REF;
+  const url = `https://api.github.com/repos/${owner}/${repo}` +
+              `/actions/workflows/${workflow}/dispatches`;
 
   let res;
   try {
@@ -57,7 +73,7 @@ async function dispatchWorkflow(env) {
   // describe a 200 with the run id. Accept any 2xx so a change on their side
   // doesn't start logging false failures.
   if (res.ok) {
-    console.log(`Dispatched ${env.GH_WORKFLOW} on ${ref} (HTTP ${res.status})`);
+    console.log(`Dispatched ${workflow} on ${ref} (HTTP ${res.status})`);
     return;
   }
 
@@ -67,11 +83,12 @@ async function dispatchWorkflow(env) {
   // The two failures worth naming, because they look identical from the dashboard
   // (data simply stops updating) but need different fixes.
   if (res.status === 401) {
-    console.error('GH_PAT is invalid or expired. Regenerate it and re-run: wrangler secret put GH_PAT');
+    console.error('GH_PAT is invalid or expired. Replace the GH_PAT secret.');
   } else if (res.status === 403) {
-    console.error('GH_PAT lacks Actions write permission on this repository.');
+    console.error('GH_PAT lacks Actions write permission on this repository, ' +
+                  'or an organization-owned fine-grained token is still pending approval.');
   } else if (res.status === 404) {
-    console.error(`Workflow "${env.GH_WORKFLOW}" not found on branch "${ref}", ` +
+    console.error(`Workflow "${workflow}" not found on branch "${ref}", ` +
                   'or the token cannot see the repo. Note: workflow_dispatch requires ' +
                   'the workflow file to exist on the default branch.');
   }
