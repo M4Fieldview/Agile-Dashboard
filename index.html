@@ -2302,14 +2302,34 @@ async function triggerAndWaitForWorkflow() {
 // ═══════════════════════════════════════════════════════
 //  JSON MODE  (data.json written by GitHub Actions)
 // ═══════════════════════════════════════════════════════
+// The published copy, used as a fallback. Browsers block fetch() on file://
+// URLs, so opening index.html straight off the file share would otherwise show
+// nothing even though data.json sits right next to it. GitHub Pages serves
+// data.json with Access-Control-Allow-Origin: *, so this works cross-origin.
+const PUBLISHED_DATA_URL = 'https://m4fieldview.github.io/Agile-Dashboard/data.json';
+
+function isFileProtocol() {
+  return location.protocol === 'file:';
+}
+
 async function tryLoadDataJson() {
-  try {
-    const res = await fetch('./data.json?t=' + Date.now());
-    if (!res.ok) return null;
-    return await res.json();
-  } catch (_) {
-    return null;
+  // Opened from disk: the relative fetch cannot work, so go straight to the
+  // published copy. Served over http(s): prefer the local copy and fall back.
+  const sources = isFileProtocol()
+    ? [PUBLISHED_DATA_URL]
+    : ['./data.json', PUBLISHED_DATA_URL];
+
+  for (const src of sources) {
+    try {
+      const res = await fetch(src + (src.includes('?') ? '&' : '?') + 't=' + Date.now());
+      if (!res.ok) continue;
+      const data = await res.json();
+      if (data && Array.isArray(data.boards) && data.boards.length) return data;
+    } catch (_) {
+      // CORS, offline, or a bad payload — try the next source.
+    }
   }
+  return null;
 }
 
 // Poll data.json until its fetchedAt differs from prevFetchedAt (i.e. the
@@ -3247,12 +3267,18 @@ function loadBoardFromJson(boardId) {
     return;
   }
 
-  // No data.json — the Action has not produced one yet, or Pages is still
-  // deploying. Nothing the user can fix with credentials, so point at the
-  // real place to look instead of demanding a token.
+  // Nothing loaded. The cause is almost always how the page was opened, not a
+  // broken pipeline, so name that first instead of sending people to Actions.
   showEmpty();
-  setHeaderStatus('⚠ No data yet');
-  showError('Could not load data.json. The scheduled "Refresh Jira Data" GitHub Action may have failed — check the Actions tab in the repository.');
+  setHeaderStatus('⚠ No data loaded');
+  showError(isFileProtocol()
+    ? 'This page was opened from disk (file://), and browsers block data loading from ' +
+      'local files. Fetching the published copy also failed — check your internet ' +
+      'connection, or open the hosted dashboard instead: ' +
+      'https://m4fieldview.github.io/Agile-Dashboard/'
+    : 'Could not load data.json from this site or from ' + PUBLISHED_DATA_URL + '. ' +
+      'If this persists, check that the latest "Refresh Jira Data" run succeeded in the ' +
+      'repository\'s Actions tab.');
 })();
 </script>
 </body>
