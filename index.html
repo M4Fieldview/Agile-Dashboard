@@ -829,7 +829,7 @@
 </div>
 
 <!-- hidden sprint select kept for JSON-mode compatibility -->
-<select id="sprintSelect" onchange="onSprintChange()" style="display:none"></select>
+<select id="sprintSelect" style="display:none"></select>
 
 <!-- hidden board select kept for JSON-mode compatibility -->
 <select id="boardSelect" onchange="onBoardChange()" style="display:none"></select>
@@ -2123,11 +2123,10 @@ function onBoardChange() {
   loadBoardFromJson(S.boardId);
 }
 
-function onSprintChange() {
-  S.sprintId = document.getElementById('sprintSelect').value;
-  if (!S.sprintId) return;
-  loadDashboardFromJson();
-}
+// No onSprintChange: the sprint select is hidden and never changed by the user,
+// and the handler called loadDashboardFromJson(), which has never existed in
+// this file — so firing it would have thrown a ReferenceError. Board selection
+// is what actually drives the view, via onBoardChange -> loadBoardFromJson.
 
 
 async function refreshDashboard() {
