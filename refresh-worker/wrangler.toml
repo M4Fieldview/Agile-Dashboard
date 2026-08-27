@@ -1,0 +1,21 @@
+name = "agile-dashboard-refresh"
+main = "src/index.js"
+compatibility_date = "2026-01-01"
+
+# Cloudflare's cron is reliable, unlike GitHub's schedule: trigger.
+# Every 5 minutes. Raise the interval here if you want fewer commits
+# to data.json (see the repo-growth note in README.md).
+[triggers]
+crons = ["*/5 * * * *"]
+
+# Non-secret config. The PAT is NOT here — it goes in the secret store:
+#   npx wrangler secret put GH_PAT
+[vars]
+GH_OWNER    = "M4Fieldview"
+GH_REPO     = "Agile-Dashboard"
+GH_WORKFLOW = "fetch-jira-data.yml"
+GH_REF      = "main"
+
+# Keep logs so a silently-expired token is diagnosable via `wrangler tail`.
+[observability]
+enabled = true
