@@ -131,6 +131,28 @@ GitHub's soft repo limit is 1 GB. Two ways to avoid the problem entirely:
 Free tier: 100,000 Worker requests/day and cron triggers included. This uses
 288/day. The repo is public, so GitHub Actions minutes are unlimited and free.
 
+## Editing the Worker later — promote the version
+
+The Cloudflare dashboard creates a new **version** every time you change the
+code or add a variable, but it does **not** make that version active. Until you
+promote it, cron keeps invoking the old one — silently, with no error anywhere.
+
+This bit us during setup: the code and secret were correct, manual dispatch
+worked, the cron trigger showed a next-fire time, and still nothing ran for 20
+minutes. The active deployment was two versions behind.
+
+Two traps that make it hard to spot:
+
+- The editor's **Trigger scheduled event** button runs the *draft* in a preview
+  sandbox, not the deployed Worker. A successful test proves the code works, not
+  that it is live.
+- Adding a secret creates a version ("Add variable: GH_PAT") that is not
+  deployed either.
+
+So after any change: **Deployments → Version History → `⋯` on the newest
+version → Promote version**, and confirm the *Active deployment* ID at the top
+matches it.
+
 ## Troubleshooting
 
 Symptom is always the same — the dashboard's age stops advancing. Run
@@ -141,4 +163,4 @@ Symptom is always the same — the dashboard's age stops advancing. Run
 | `401` | Token invalid or expired | `npx wrangler secret put GH_PAT` with a new token |
 | `403` | Token lacks Actions write | Re-issue with **Actions: Read and write** |
 | `404` | Workflow or repo not visible to the token | Check `GH_OWNER`/`GH_REPO`/`GH_WORKFLOW`; the workflow must exist on the default branch |
-| nothing at all | Cron not firing | Confirm the deploy: `npx wrangler deployments list` |
+| nothing at all | Cron not firing, or an old version is active | Check *Active deployment* matches the newest version (see above). CLI: `npx wrangler deployments list` |
