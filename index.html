@@ -790,41 +790,22 @@
   <div class="settings-inner">
 
     <div class="settings-group">
-      <label>Jira Cloud URL</label>
-      <input id="cfgUrl" type="url" placeholder="https://yourcompany.atlassian.net" />
-      <span class="settings-hint">No trailing slash</span>
-    </div>
-
-    <div class="settings-group">
-      <label>Email</label>
-      <input id="cfgEmail" type="email" placeholder="you@company.com" />
-    </div>
-
-    <div class="settings-group">
-      <label>API Token</label>
-      <input id="cfgToken" type="password" placeholder="Your Jira API token" />
-      <span class="settings-hint">
-        Create at <a href="https://id.atlassian.com/manage-profile/security/api-tokens" target="_blank" style="color:var(--blue)">id.atlassian.com → API tokens</a>
-      </span>
-    </div>
-
-    <div class="settings-group">
       <label>Department Field <span style="font-weight:400;text-transform:none">(optional)</span></label>
       <input id="cfgDeptField" type="text" placeholder="e.g. customfield_10050 or components" />
       <span class="settings-hint">Jira field key for department grouping. Use <em>components</em> for built-in components.</span>
     </div>
 
     <div class="settings-group">
-      <label>GitHub Token <span style="font-weight:400;text-transform:none">(live refresh)</span></label>
+      <label>GitHub Token <span style="font-weight:400;text-transform:none">(optional)</span></label>
       <input id="cfgGhToken" type="password" placeholder="ghp_…" />
       <span class="settings-hint">
-        PAT with <code>repo</code> scope — stored locally only.
+        Optional. Only speeds up ↻ Refresh by forcing a fetch instead of waiting for the 5-minute cron.
         <a href="https://github.com/settings/tokens/new?scopes=repo" target="_blank" style="color:var(--blue)">Create token ↗</a>
       </span>
     </div>
 
     <div class="settings-group">
-      <label>GitHub Repo</label>
+      <label>GitHub Repo <span style="font-weight:400;text-transform:none">(optional)</span></label>
       <input id="cfgGhRepo" type="text" placeholder="owner/repo" />
       <span class="settings-hint">e.g. M4Fieldview/Agile-Dashboard</span>
     </div>
@@ -832,26 +813,22 @@
     <div class="settings-note" id="settingsNote" style="display:none"></div>
 
     <div class="settings-note" style="background:#DEEBFF;border-color:#B3D4FF;color:#0747A6;grid-column:1/-1">
-      <strong>Live refresh:</strong> Enter your GitHub Token + Repo above and the dashboard will automatically
-      fetch fresh Jira data every time you load the page (via GitHub Actions — no CORS issues).<br>
-      The data also auto-refreshes every 15 minutes in the background via GitHub Actions.
+      <strong>No credentials required.</strong> Jira credentials live in GitHub repository secrets, and a
+      scheduled Action refreshes the data every 5 minutes — so the dashboard keeps working even after you
+      clear your browser cache.<br>
+      The settings above are optional conveniences. Leaving them blank means ↻ Refresh shows the newest
+      scheduled data (at most ~5 minutes old) instead of forcing an immediate fetch.
     </div>
 
     <div class="settings-actions">
-      <button class="btn" id="connectBtn" onclick="connectJira()">Connect</button>
+      <button class="btn" id="connectBtn" onclick="saveSettings()">Save</button>
       <button class="btn btn-ghost btn-sm" style="background:var(--bg);color:var(--text);" onclick="clearConfig()">Clear saved</button>
-    </div>
-
-    <div class="settings-note">
-      <strong>CORS note:</strong> This dashboard calls the Jira Cloud REST API directly from your browser.
-      If requests are blocked, install the <em>Allow CORS: Access-Control-Allow-Origin</em> browser extension,
-      or run a lightweight proxy such as <code>npx local-cors-proxy --proxyUrl https://yourcompany.atlassian.net</code>.
     </div>
 
   </div>
 </div>
 
-<!-- hidden sprint select kept for API mode compatibility -->
+<!-- hidden sprint select kept for JSON-mode compatibility -->
 <select id="sprintSelect" onchange="onSprintChange()" style="display:none"></select>
 
 <!-- hidden board select kept for JSON-mode compatibility -->
@@ -1286,20 +1263,34 @@ function toggleTheme() {
 })();
 
 // ═══════════════════════════════════════════════════════
-//  CONFIG  (localStorage — token stored locally only)
+//  CONFIG  (localStorage — optional conveniences only)
+//
+//  Jira credentials deliberately live ONLY in GitHub repository secrets,
+//  never in the browser. A scheduled Action fetches Jira and commits
+//  data.json, which this page reads with no auth at all — so clearing the
+//  browser cache can never break the dashboard.
 // ═══════════════════════════════════════════════════════
 function loadConfig() {
   try {
     const raw = localStorage.getItem('agile_dash_cfg');
     if (raw) S.config = JSON.parse(raw);
   } catch(_) { S.config = null; }
+
+  // Migration: earlier versions stored Jira url/email/token in the browser.
+  // They are no longer used, so drop them rather than leave a stale
+  // credential sitting in localStorage.
+  if (S.config && ('url' in S.config || 'email' in S.config || 'token' in S.config)) {
+    delete S.config.url;
+    delete S.config.email;
+    delete S.config.token;
+    try {
+      localStorage.setItem('agile_dash_cfg', JSON.stringify(S.config));
+    } catch(_) { /* storage full or blocked — harmless */ }
+  }
 }
 
 function saveConfig() {
   S.config = {
-    url:       document.getElementById('cfgUrl').value.replace(/\/$/, '').trim(),
-    email:     document.getElementById('cfgEmail').value.trim(),
-    token:     document.getElementById('cfgToken').value.trim(),
     deptField: document.getElementById('cfgDeptField').value.trim() || 'components',
     ghToken:   document.getElementById('cfgGhToken').value.trim(),
     ghRepo:    document.getElementById('cfgGhRepo').value.trim(),
@@ -1309,9 +1300,6 @@ function saveConfig() {
 
 function populateConfigFields() {
   if (!S.config) return;
-  document.getElementById('cfgUrl').value       = S.config.url       || '';
-  document.getElementById('cfgEmail').value     = S.config.email     || '';
-  document.getElementById('cfgToken').value     = S.config.token     || '';
   document.getElementById('cfgDeptField').value = S.config.deptField || '';
   document.getElementById('cfgGhToken').value   = S.config.ghToken   || '';
   document.getElementById('cfgGhRepo').value    = S.config.ghRepo    || '';
@@ -1320,223 +1308,25 @@ function populateConfigFields() {
 function clearConfig() {
   localStorage.removeItem('agile_dash_cfg');
   S.config = null;
-  ['cfgUrl','cfgEmail','cfgToken','cfgDeptField','cfgGhToken','cfgGhRepo'].forEach(id => document.getElementById(id).value = '');
-  showNote('Config cleared.', 'info');
+  ['cfgDeptField','cfgGhToken','cfgGhRepo'].forEach(id => document.getElementById(id).value = '');
+  showNote('Optional settings cleared. The dashboard still works — data comes from GitHub Actions.', 'info');
 }
 
-// ═══════════════════════════════════════════════════════
-//  JIRA API
-// ═══════════════════════════════════════════════════════
-function authHeader() {
-  const creds = btoa(`${S.config.email}:${S.config.token}`);
-  return { 'Authorization': `Basic ${creds}`, 'Accept': 'application/json' };
+// Save the optional settings. Nothing here is required for the dashboard to work.
+function saveSettings() {
+  clearError();
+  saveConfig();
+  const hasGh = S.config.ghToken && S.config.ghRepo && S.config.ghRepo.includes('/');
+  showNote(hasGh
+    ? '✓ Saved. ↻ Refresh will now force an immediate fetch via GitHub Actions.'
+    : '✓ Saved. ↻ Refresh will show the newest scheduled data (updates every ~5 min).',
+    'success');
 }
 
-async function jiraFetch(path, params = {}) {
-  const url = new URL(`${S.config.url}${path}`);
-  Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
-  const res = await fetch(url.toString(), { headers: authHeader() });
-  if (!res.ok) {
-    const txt = await res.text().catch(() => '');
-    throw new Error(`Jira ${res.status}: ${res.statusText}. ${txt.slice(0, 200)}`);
-  }
-  return res.json();
-}
-
-// Paginated fetch (Jira REST v3 style, uses startAt/maxResults)
-async function jiraFetchAll(path, itemsKey, extraParams = {}) {
-  let results = [], startAt = 0, total = null;
-  while (total === null || results.length < total) {
-    const data = await jiraFetch(path, { ...extraParams, startAt, maxResults: 100 });
-    const items = data[itemsKey] || data.values || data.issues || [];
-    results = results.concat(items);
-    total = data.total ?? data.maxResults ?? items.length;
-    startAt += items.length;
-    if (items.length === 0) break;
-    if (startAt >= (data.total ?? items.length)) break;
-  }
-  return results;
-}
-
-async function loadBoards() {
-  // Fetch all board types (scrum + kanban) so teams using either workflow are supported
-  const data = await jiraFetch('/rest/agile/1.0/board', { maxResults: 50 });
-  return data.values || [];
-}
-
-async function loadSprints(boardId) {
-  // load active + recently closed
-  const [active, closed] = await Promise.all([
-    jiraFetch('/rest/agile/1.0/board/' + boardId + '/sprint', { state: 'active', maxResults: 5 }),
-    jiraFetch('/rest/agile/1.0/board/' + boardId + '/sprint', { state: 'closed', maxResults: 10 }),
-  ]);
-  const future = await jiraFetch('/rest/agile/1.0/board/' + boardId + '/sprint', { state: 'future', maxResults: 3 }).catch(() => ({ values: [] }));
-  return [
-    ...(future.values || []),
-    ...(active.values || []),
-    ...(closed.values || []).reverse(),
-  ];
-}
-
-async function loadSprintIssues(sprintId) {
-  const fields = [
-    'summary', 'assignee', 'issuetype', 'status', 'components',
-    'timespent', 'timeoriginalestimate', 'timeestimate',
-    'priority', 'customfield_10016', // story points
-  ];
-  if (S.config.deptField && S.config.deptField !== 'components') {
-    fields.push(S.config.deptField);
-  }
-  return jiraFetchAll(
-    `/rest/agile/1.0/sprint/${sprintId}/issue`,
-    'issues',
-    { fields: fields.join(','), maxResults: 100 }
-  );
-}
-
-// Batch worklog fetches with concurrency limit
-async function loadAllWorklogs(issues) {
-  const CONCURRENCY = 6;
-  const result = {};
-  for (let i = 0; i < issues.length; i += CONCURRENCY) {
-    setLoadingMsg(`Loading worklogs… (${Math.min(i + CONCURRENCY, issues.length)} / ${issues.length})`);
-    const batch = issues.slice(i, i + CONCURRENCY);
-    const data = await Promise.all(
-      batch.map(async issue => {
-        try {
-          const wl = await jiraFetch(`/rest/api/3/issue/${issue.key}/worklog`);
-          return { key: issue.key, logs: wl.worklogs || [] };
-        } catch (_) {
-          return { key: issue.key, logs: [] };
-        }
-      })
-    );
-    data.forEach(d => { result[d.key] = d.logs; });
-  }
-  return result;
-}
-
-// ═══════════════════════════════════════════════════════
-//  LIVE DIRECT-API FETCH (mirrors .github/scripts/fetch_jira.py)
-//  Builds the same structure as data.json so activateJsonMode() can
-//  consume it directly — used by Refresh for a near-instant update
-//  when the browser can reach Jira directly (falls back to Actions).
-// ═══════════════════════════════════════════════════════
-const LIVE_TEAM_BOARDS = {       // exact Jira board name → clean team label
-  'M4CAD board':   'M4 CAD',
-  'M4 Field Tech': 'M4 Field Tech',
-  'M4GIS board':   'M4 GIS',
-};
-const LIVE_DEPT_FIELD = 'customfield_10397';   // Supported Department
-const LIVE_PROJ_FIELD = 'customfield_10463';   // Project Number
-const LIVE_RECENT_DAYS = 90;
-const LIVE_WORKLOG_CONCURRENCY = 10;
-
-function liveExtractField(raw) {
-  if (raw === null || raw === undefined) return null;
-  if (Array.isArray(raw)) return raw.map(liveExtractField).filter(v => v != null);
-  if (typeof raw === 'object') return raw.value || raw.name || raw.displayName || null;
-  return String(raw);
-}
-
-// Fetch worklogs for many issues with a concurrency cap
-async function liveFetchWorklogs(issues) {
-  const out = {};
-  for (let i = 0; i < issues.length; i += LIVE_WORKLOG_CONCURRENCY) {
-    const batch = issues.slice(i, i + LIVE_WORKLOG_CONCURRENCY);
-    setLoadingMsg(`Live: worklogs ${Math.min(i + batch.length, issues.length)}/${issues.length}…`);
-    const res = await Promise.all(batch.map(async issue => {
-      try {
-        const wl = await jiraFetch(`/rest/api/3/issue/${issue.key}/worklog`);
-        return { key: issue.key, logs: wl.worklogs || [] };
-      } catch (_) {
-        return { key: issue.key, logs: [] };
-      }
-    }));
-    res.forEach(r => { out[r.key] = r.logs; });
-  }
-  return out;
-}
-
-// Throws on CORS / network / auth failure so the caller can fall back.
-async function fetchLiveFromJira() {
-  if (!S.config?.url || !S.config?.email || !S.config?.token) {
-    throw new Error('No Jira credentials configured');
-  }
-
-  const allBoards = await loadBoards();   // first call — throws on CORS/network
-  const targets = [];
-  for (const [name, team] of Object.entries(LIVE_TEAM_BOARDS)) {
-    const b = (allBoards || []).find(x => x.name === name);
-    if (b) targets.push({ board: b, team });
-  }
-  if (!targets.length) throw new Error('None of the team boards were found via the API');
-
-  const cutoff = (() => {
-    const d = new Date(); d.setDate(d.getDate() - LIVE_RECENT_DAYS);
-    return d.toISOString().slice(0, 10);
-  })();
-  const fields = [
-    'summary', 'assignee', 'issuetype', 'status', 'components',
-    'timespent', 'timeoriginalestimate', 'timeestimate', 'priority',
-    LIVE_DEPT_FIELD, LIVE_PROJ_FIELD,
-  ].join(',');
-
-  const boards = [];
-  for (const { board, team } of targets) {
-    const rawIssues = await jiraFetchAll(
-      `/rest/agile/1.0/board/${board.id}/issue`,
-      'issues',
-      { jql: `updated >= "${cutoff}"`, fields, maxResults: 100 }
-    );
-    const wlMap = await liveFetchWorklogs(rawIssues);
-
-    const issues = rawIssues.map(i => {
-      const f = i.fields || {};
-      return {
-        key: i.key,
-        fields: {
-          summary:              f.summary || '',
-          timespent:            f.timespent || 0,
-          timeoriginalestimate: f.timeoriginalestimate || 0,
-          timeestimate:         f.timeestimate || 0,
-          assignee: f.assignee ? {
-            displayName:  f.assignee.displayName || 'Unassigned',
-            avatarUrls:   f.assignee.avatarUrls || {},
-            emailAddress: f.assignee.emailAddress || '',
-          } : null,
-          issuetype: { name: f.issuetype?.name || 'Unknown', iconUrl: f.issuetype?.iconUrl || '' },
-          status:    { name: f.status?.name || '', statusCategory: { key: f.status?.statusCategory?.key || 'new' } },
-          components:    (f.components || []).map(c => ({ name: c.name })),
-          supportedDept: liveExtractField(f[LIVE_DEPT_FIELD]),
-          projectNumber: liveExtractField(f[LIVE_PROJ_FIELD]),
-        },
-        worklogs: (wlMap[i.key] || []).map(w => ({
-          id:      w.id || '',
-          author:  {
-            displayName:  w.author?.displayName || 'Unassigned',
-            avatarUrls:   w.author?.avatarUrls || {},
-            emailAddress: w.author?.emailAddress || '',
-          },
-          started:          w.started || '',
-          timeSpentSeconds: w.timeSpentSeconds || 0,
-        })),
-      };
-    });
-
-    boards.push({
-      id:   board.id,
-      name: board.name,
-      type: board.type || 'kanban',
-      team,
-      sprints: [{
-        id: `${board.id}_live`, name: 'Live', state: 'active',
-        startDate: null, endDate: null, goal: '', issues,
-      }],
-    });
-  }
-
-  return { fetchedAt: new Date().toISOString(), boards };
+// Jira base URL for /browse/KEY links. Comes from data.json (written by the
+// Action from the JIRA_URL secret) so no browser-side config is needed.
+function jiraBaseUrl() {
+  return (S.jsonData?.jiraUrl || '').replace(/\/$/, '');
 }
 
 // ═══════════════════════════════════════════════════════
@@ -1836,7 +1626,7 @@ function renderTableFiltered(filtered) {
       pct,
       over:      est > 0 && logged > est,
       maxLogged,
-      url:       `${S.config ? S.config.url : ''}/browse/${issue.key}`,
+      url:       `${jiraBaseUrl()}/browse/${issue.key}`,
     };
   });
 
@@ -2118,7 +1908,7 @@ function renderTable(issues, worklogs, d) {
       pct,
       over,
       maxLogged,
-      url: `${S.config.url}/browse/${issue.key}`,
+      url: `${jiraBaseUrl()}/browse/${issue.key}`,
     };
   });
 
@@ -2324,198 +2114,51 @@ function toggleSettings() {
   panel.classList.toggle('open');
 }
 
-function updateSprintBadge(sprint) {
-  if (!sprint) { document.getElementById('sprintBadge').innerHTML = ''; return; }
-  const state = sprint.state || 'unknown';
-  const dotClass = state === 'active' ? 'badge-dot' : 'badge-dot closed';
-  const dates = sprint.startDate
-    ? `${new Date(sprint.startDate).toLocaleDateString()} – ${new Date(sprint.endDate || sprint.startDate).toLocaleDateString()}`
-    : '';
-  document.getElementById('sprintBadge').innerHTML =
-    `<span class="sprint-badge"><span class="${dotClass}"></span><strong>${sprint.name}</strong>${dates ? ' · ' + dates : ''} · <em>${state}</em></span>`;
-}
-
 // ═══════════════════════════════════════════════════════
 //  BOARD / SPRINT SELECTORS
 // ═══════════════════════════════════════════════════════
-async function connectJira() {
-  clearError();
-  saveConfig();
-
-  const hasJira = S.config.url && S.config.email && S.config.token;
-  const hasGh   = S.config.ghToken && S.config.ghRepo && S.config.ghRepo.includes('/');
-
-  // GitHub-only setup: no Jira creds, but a token + repo for on-demand refresh.
-  if (!hasJira) {
-    if (hasGh) {
-      showNote('✓ Saved. GitHub refresh is configured — use ↻ Refresh to pull fresh data on demand.', 'success');
-      setHeaderStatus('GitHub refresh configured');
-      return;
-    }
-    showNote('Enter Jira URL + email + token for direct access, OR a GitHub Token + Repo (owner/repo) for on-demand refresh.', 'error');
-    return;
-  }
-  const btn = document.getElementById('connectBtn');
-  btn.disabled = true;
-  btn.textContent = 'Connecting…';
-  showNote('Connecting to Jira…');
-  try {
-    S.boards = await loadBoards();
-    const boardSel = document.getElementById('boardSelect');
-    boardSel.innerHTML = S.boards.length
-      ? S.boards.map(b => `<option value="${b.id}">${b.name} (${b.type})</option>`).join('')
-      : '<option value="">No boards found</option>';
-    boardSel.disabled = S.boards.length === 0;
-    if (S.boards.length === 0) {
-      showNote('Connected but no boards found. Check your Jira URL and permissions.', 'error');
-    } else {
-      showNote(`Connected! ${S.boards.length} board(s) found.`, 'success');
-      setHeaderStatus(`Connected · ${S.boards.length} boards`);
-    }
-    if (S.boards.length > 0) {
-      S.boardId = S.boards[0].id;
-      await populateSprints(S.boardId);
-    }
-  } catch (err) {
-    console.error('Jira connect error:', err);
-    const msg = err.message.includes('Failed to fetch')
-      ? 'Could not reach Jira — possible CORS block. See the CORS note below, or check that your Jira URL is correct.'
-      : `Connection failed: ${err.message}`;
-    showNote(msg, 'error');
-    showError(msg);
-  } finally {
-    btn.disabled = false;
-    btn.textContent = 'Connect';
-  }
-}
-
-async function populateSprints(boardId) {
-  const sprintSel = document.getElementById('sprintSelect');
-  sprintSel.disabled = true;
-  sprintSel.innerHTML = '<option>Loading…</option>';
-  try {
-    S.sprints = await loadSprints(boardId);
-    sprintSel.innerHTML = S.sprints.length
-      ? S.sprints.map(s => `<option value="${s.id}">${s.name} (${s.state})</option>`).join('')
-      : '<option value="">No sprints found</option>';
-    sprintSel.disabled = S.sprints.length === 0;
-    // auto-select active sprint
-    const active = S.sprints.find(s => s.state === 'active');
-    if (active) sprintSel.value = active.id;
-    if (sprintSel.value) onSprintChange();
-  } catch (err) {
-    sprintSel.innerHTML = '<option>Error loading sprints</option>';
-    showError(`Failed to load sprints: ${err.message}`);
-  }
-}
-
-async function onBoardChange() {
+function onBoardChange() {
   S.boardId = document.getElementById('boardSelect').value;
   if (!S.boardId) return;
-  if (S.mode === 'json') {
-    loadBoardFromJson(S.boardId);
-  } else {
-    await populateSprints(S.boardId);
-  }
+  loadBoardFromJson(S.boardId);
 }
 
-async function onSprintChange() {
+function onSprintChange() {
   S.sprintId = document.getElementById('sprintSelect').value;
   if (!S.sprintId) return;
-  if (S.mode === 'json') {
-    loadDashboardFromJson();
-  } else {
-    await loadDashboard();
-  }
+  loadDashboardFromJson();
 }
 
-// ═══════════════════════════════════════════════════════
-//  MAIN DASHBOARD LOAD
-// ═══════════════════════════════════════════════════════
-async function loadDashboard() {
-  if (!S.config || !S.sprintId) return;
-  clearError();
-  showLoading();
-  setLoadingMsg('Loading sprint issues…');
-  setHeaderStatus('');
-  document.getElementById('refreshBtn').disabled = true;
-
-  try {
-    // Sprint info
-    S.sprintInfo = S.sprints.find(s => String(s.id) === String(S.sprintId)) || {};
-    updateSprintBadge(S.sprintInfo);
-
-    // Issues
-    S.issues = await loadSprintIssues(S.sprintId);
-    setLoadingMsg(`Loading worklogs for ${S.issues.length} issues…`);
-
-    // Worklogs
-    S.worklogs = await loadAllWorklogs(S.issues);
-
-    // Process
-    S.processed = processData(S.issues, S.worklogs, S.sprintInfo);
-
-    renderAllWithDateFilter();
-    const now = new Date().toLocaleTimeString();
-    setHeaderStatus(`Updated ${now}`);
-  } catch (err) {
-    showEmpty();
-    showError(`Error loading dashboard: ${err.message}`);
-  } finally {
-    document.getElementById('refreshBtn').disabled = false;
-  }
-}
 
 async function refreshDashboard() {
   const btn = document.getElementById('refreshBtn');
   btn.disabled = true;
+  const prevFetchedAt = S.jsonData?.fetchedAt || '';
 
-  // 1) Fast path: fetch directly from Jira in the browser (seconds).
-  if (S.config?.url && S.config?.email && S.config?.token) {
-    try {
-      setHeaderStatus('Refreshing live from Jira…');
-      const live = await fetchLiveFromJira();
-      if (live.boards.length) {
-        activateJsonMode(live);
-        setHeaderStatus(`✓ Live · ${new Date(live.fetchedAt).toLocaleTimeString()}`);
-        btn.disabled = false;
-        resetAutoRefreshCountdown();
-        return;
-      }
-    } catch (err) {
-      console.warn('Direct Jira refresh unavailable, falling back:', err);
-      // fall through to the GitHub Actions / cached path below
-    }
-  }
-
-  // 2) GitHub Actions: trigger a fresh fetch (CORS-free, ~1-3 min).
+  // 1) If an optional GitHub token is configured, force an immediate fetch.
   if (S.config?.ghToken && S.config?.ghRepo) {
-    const hadJiraCreds = !!(S.config?.url && S.config?.email && S.config?.token);
-    setHeaderStatus(hadJiraCreds
-      ? 'Direct API unavailable — refreshing via GitHub Actions…'
-      : 'Refreshing via GitHub Actions…');
-    const prevFetchedAt = S.jsonData?.fetchedAt || '';
+    setHeaderStatus('Refreshing via GitHub Actions...');
     const success = await triggerAndWaitForWorkflow();
     if (success) {
       // The workflow committed data.json, but GitHub Pages may still serve a
-      // cached copy for a bit — poll until the fetchedAt actually changes.
+      // cached copy for a bit - poll until the fetchedAt actually changes.
       const fresh = await pollForFreshData(prevFetchedAt);
       if (fresh?.boards?.length) {
         activateJsonMode(fresh);
         setHeaderStatus(`✓ Updated · ${new Date(fresh.fetchedAt).toLocaleTimeString()}`);
       } else {
-        setHeaderStatus('✓ Fetched — new data deploying, will appear shortly');
+        setHeaderStatus('✓ Fetched - new data deploying, will appear shortly');
       }
     } else {
       // Workflow poll window closed, but the run may still complete shortly.
       // Give it one more check against data.json before declaring failure.
-      setHeaderStatus('⟳ Workflow taking longer than expected — checking for updated data…');
+      setHeaderStatus('⟳ Workflow taking longer than expected - checking for updated data...');
       const fresh = await pollForFreshData(prevFetchedAt, 90000); // 90 s grace period
       if (fresh?.boards?.length && fresh.fetchedAt !== prevFetchedAt) {
         activateJsonMode(fresh);
         setHeaderStatus(`✓ Updated · ${new Date(fresh.fetchedAt).toLocaleTimeString()}`);
       } else {
-        setHeaderStatus('⚠ Refresh timed out — showing cached data');
+        setHeaderStatus('⚠ Refresh timed out - showing cached data');
       }
     }
     btn.disabled = false;
@@ -2523,27 +2166,23 @@ async function refreshDashboard() {
     return;
   }
 
-  // 3) Last resort: re-read the cached data.json, or the legacy API load.
-  if (S.mode === 'json') {
-    const cached = await tryLoadDataJson();
-    if (cached?.boards?.length) {
-      activateJsonMode(cached);
-      const fetched = new Date(cached.fetchedAt);
-      const ageMin = Math.max(0, Math.round((Date.now() - fetched.getTime()) / 60000));
-      // No browser credentials → can't pull live; data only updates via the
-      // GitHub Actions cron (~5 min). Tell the user instead of doing nothing.
-      setHeaderStatus(`Data from ${fetched.toLocaleTimeString()} (${ageMin} min old) · auto-updates ~5 min · add credentials in ⚙ for instant`);
-    } else {
-      setHeaderStatus('No data — open ⚙ Settings to connect');
-    }
-    btn.disabled = false;
-    resetAutoRefreshCountdown();
-    return;
+  // 2) Default: re-read data.json, which the scheduled Action rewrites every
+  //    ~5 minutes. No credentials involved, so this always works.
+  const cached = await tryLoadDataJson();
+  if (cached?.boards?.length) {
+    activateJsonMode(cached);
+    const fetched = new Date(cached.fetchedAt);
+    const ageMin  = Math.max(0, Math.round((Date.now() - fetched.getTime()) / 60000));
+    setHeaderStatus(cached.fetchedAt !== prevFetchedAt
+      ? `✓ Updated · ${fetched.toLocaleTimeString()}`
+      : `Current as of ${fetched.toLocaleTimeString()} (${ageMin} min old) · updates every ~5 min`);
+  } else {
+    setHeaderStatus('⚠ No data yet - check the Actions tab in GitHub');
   }
-  await loadDashboard();
   btn.disabled = false;
   resetAutoRefreshCountdown();
 }
+
 
 // ═══════════════════════════════════════════════════════
 //  AUTO REFRESH
@@ -3506,7 +3145,7 @@ function renderKanbanCard(issue) {
   const f       = issue.fields || {};
   const job     = jobNumberOf(issue);
   const team    = issue._team || '';
-  const url     = `${S.config?.url || ''}/browse/${issue.key}`;
+  const url     = `${jiraBaseUrl()}/browse/${issue.key}`;
   const typeIco = f.issuetype?.iconUrl ? `<img src="${f.issuetype.iconUrl}" width="12" height="12" alt="" />` : '';
   const assignee = f.assignee?.displayName || 'Unassigned';
   const avatar   = f.assignee?.avatarUrls?.['24x24']
@@ -3597,23 +3236,23 @@ function loadBoardFromJson(boardId) {
   loadConfig();
   if (S.config) populateConfigFields();
 
-  // Always load cached data.json instantly on page load — no workflow trigger.
-  // Use the ↻ Refresh button when you want a fresh pull from Jira.
+  // data.json is written by the scheduled GitHub Action and needs no auth,
+  // so this is the one and only load path.
   const jsonData = await tryLoadDataJson();
   if (jsonData && Array.isArray(jsonData.boards) && jsonData.boards.length > 0) {
     activateJsonMode(jsonData);
     const fetched = new Date(jsonData.fetchedAt);
-    setHeaderStatus(`Cached · ${fetched.toLocaleTimeString()}`);
+    const ageMin  = Math.max(0, Math.round((Date.now() - fetched.getTime()) / 60000));
+    setHeaderStatus(`Current as of ${fetched.toLocaleTimeString()} (${ageMin} min old) · updates every ~5 min`);
     return;
   }
 
-  // Fall back to direct Jira API
-  if (S.config) {
-    connectJira().catch(() => {});
-  } else {
-    document.getElementById('settingsPanel').classList.add('open');
-  }
+  // No data.json — the Action has not produced one yet, or Pages is still
+  // deploying. Nothing the user can fix with credentials, so point at the
+  // real place to look instead of demanding a token.
   showEmpty();
+  setHeaderStatus('⚠ No data yet');
+  showError('Could not load data.json. The scheduled "Refresh Jira Data" GitHub Action may have failed — check the Actions tab in the repository.');
 })();
 </script>
 </body>

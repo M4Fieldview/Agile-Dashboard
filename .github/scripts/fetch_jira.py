@@ -551,6 +551,9 @@ def main():
     # ── Write output ──────────────────────────────────────────────────────────
     result = {
         'fetchedAt': datetime.now(timezone.utc).isoformat(),
+        # Base URL so the dashboard can build /browse/KEY links without needing
+        # Jira credentials entered in the browser.
+        'jiraUrl':   JIRA_URL,
         'boards':    output_boards,
     }
 
