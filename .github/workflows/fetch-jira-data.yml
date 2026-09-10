@@ -23,15 +23,27 @@ on:
                              # a workflow publishes it, so edits to index.html
                              # would otherwise never go live.
 
-# Let a deployment finish rather than cancelling it part-way. Runs take well
-# under a minute, so a 5-minute cadence never builds a backlog.
+# cancel-in-progress: true is deliberate, and was learned the hard way.
+#
+# With `false`, a run wedged at the github-pages deployment gate holds this
+# concurrency group forever: every later dispatch is cancelled while still
+# queued, so the data silently stopped updating for six days (2026-09-04 to
+# 2026-09-10) with no failed run to notice. Nothing was actually gating it --
+# wait_timer 0, zero reviewers -- the run was just stuck.
+#
+# With `true`, the next 5-minute dispatch clears a wedged run instead of being
+# blocked by it, so the pipeline self-heals. The cost is that a deploy running
+# longer than 5 minutes can be cancelled part-way; runs take well under a
+# minute, and the following dispatch publishes anyway. An occasional skipped
+# deploy beats silently serving week-old data.
 concurrency:
   group: pages
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   refresh:
     runs-on: ubuntu-latest
+    timeout-minutes: 10      # fail loudly instead of occupying the group for hours
 
     permissions:
       contents: read         # was write, for the commit that no longer happens
