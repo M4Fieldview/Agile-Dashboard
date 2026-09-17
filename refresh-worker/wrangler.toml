@@ -3,10 +3,15 @@ main = "src/index.js"
 compatibility_date = "2026-01-01"
 
 # Cloudflare's cron is reliable, unlike GitHub's schedule: trigger.
-# Every 5 minutes. Raise the interval here if you want fewer commits
-# to data.json (see the repo-growth note in README.md).
+#
+# Every 15 minutes, NOT every 5. GitHub Pages has a soft limit of about 10
+# builds per hour; at a 5-minute cadence (12-13/hour) the site stopped being
+# updated on 2026-09-17 while every run and every deployment still reported
+# success -- the whole site served an 8-hour-old build. 15 minutes is 4/hour,
+# well under the limit, and the data this tracks (worklogs) changes a few
+# times a day, not continuously.
 [triggers]
-crons = ["*/5 * * * *"]
+crons = ["*/15 * * * *"]
 
 # Non-secret config. The PAT is NOT here — it goes in the secret store:
 #   npx wrangler secret put GH_PAT

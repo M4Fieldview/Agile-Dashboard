@@ -33,7 +33,7 @@ Use this if `node`/`npx` aren't installed. Everything happens in the browser.
      baked into the code. Add plain-text variables of the same name only if you
      want to override them.
 6. **Settings** → **Triggers** → **Cron Triggers** → **Add Cron Trigger** →
-   `*/5 * * * *` → save.
+   `*/15 * * * *` → save. Do not go below this; see **Pages build rate limit**.
 
 Verify: within ~5 minutes a run with event `workflow_dispatch` should appear at
 https://github.com/M4Fieldview/Agile-Dashboard/actions — and the dashboard's
@@ -105,6 +105,23 @@ Because the resource owner is an organization, the token may come back
 **pending approval** — an org owner has to approve it under
 Organization settings → Personal access tokens. A classic token with the `repo`
 scope works immediately and skips that, at the cost of broader access.
+
+## Pages build rate limit — do not go below 15 minutes
+
+GitHub Pages has a soft limit of roughly **10 builds per hour**. A 5-minute
+cadence is 12-13/hour and exceeded it on 2026-09-17: the live site froze at a
+07:05 build for over eight hours while ~100 workflow runs and every one of
+their `github-pages` deployments reported **success**. Nothing failed, nothing
+was logged, the status page was green -- the serving layer simply stopped
+applying new deployments.
+
+There is no "you are being throttled" signal anywhere in the API, so the only
+symptom is the dashboard's age readout climbing while Actions looks perfectly
+healthy. Check `Last-Modified` on the live site to confirm:
+
+    curl -sI https://m4fieldview.github.io/Agile-Dashboard/data.json | grep -i last-modified
+
+If that timestamp is old while recent runs are green, the cadence is too fast.
 
 ## Repo growth — read this before lowering the interval
 
