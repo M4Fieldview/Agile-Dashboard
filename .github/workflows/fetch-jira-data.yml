@@ -31,9 +31,9 @@ on:
 # 2026-09-10) with no failed run to notice. Nothing was actually gating it --
 # wait_timer 0, zero reviewers -- the run was just stuck.
 #
-# With `true`, the next 5-minute dispatch clears a wedged run instead of being
-# blocked by it, so the pipeline self-heals. The cost is that a deploy running
-# longer than 5 minutes can be cancelled part-way; runs take well under a
+# With `true`, the next dispatch clears a wedged run instead of being blocked
+# by it, so the pipeline self-heals. The cost is that a deploy running longer
+# than the dispatch interval can be cancelled part-way; runs take well under a
 # minute, and the following dispatch publishes anyway. An occasional skipped
 # deploy beats silently serving week-old data.
 concurrency:
@@ -41,7 +41,77 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # ── Deploy rate gate ───────────────────────────────────────────────────────
+  # GitHub Pages soft-limits builds to roughly 10 per hour. The Cloudflare
+  # Worker fires every 5 minutes (12-13/hour), which exceeded that limit twice:
+  # on 2026-09-17 and 2026-09-21 the live site froze for 8 and 13 hours while
+  # every run and every github-pages deployment still reported success. Nothing
+  # fails, nothing is logged, and the status page stays green — the serving
+  # layer just stops applying new deployments.
+  #
+  # The limit is enforced HERE rather than in the Worker's cron schedule on
+  # purpose: this file is version-controlled and reviewable, so the protection
+  # cannot drift when somebody edits a schedule in a Cloudflare dashboard.
+  # Dispatch as often as you like; at most one deploy every ~14 minutes
+  # actually happens.
+  #
+  # It is a separate job so that skipping publishes nothing at all: the
+  # `environment:` key on the deploy job registers a github-pages deployment
+  # even when every step inside it is skipped.
+  gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      deploy: ${{ steps.check.outputs.deploy }}
+    steps:
+      - name: Has the live site been rebuilt recently?
+        id: check
+        env:
+          LIVE_URL: https://m4fieldview.github.io/Agile-Dashboard/data.json
+          MIN_SECONDS: '840'          # 14 min -> at most ~4 deploys/hour
+          EVENT: ${{ github.event_name }}
+        run: |
+          set -uo pipefail
+
+          # Pushes carry code changes and manual runs have a person waiting on
+          # them; neither should be silently rate-limited.
+          if [ "$EVENT" = "push" ]; then
+            echo "push event - deploying"
+            echo "deploy=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          HEADERS=$(curl -sS -I --max-time 30 "$LIVE_URL" || true)
+          LM=$(printf '%s' "$HEADERS" | grep -i '^last-modified:' | head -1 | cut -d: -f2- | sed 's/^ *//; s/[[:space:]]*$//')
+
+          # Fail open: if the live site cannot be read, publishing is the safer
+          # outcome. A broken check must never be able to stall the pipeline.
+          if [ -z "$LM" ]; then
+            echo "no Last-Modified from the live site - deploying (fail open)"
+            echo "deploy=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          LIVE_EPOCH=$(date -u -d "$LM" +%s 2>/dev/null || true)
+          if [ -z "$LIVE_EPOCH" ]; then
+            echo "could not parse Last-Modified ($LM) - deploying (fail open)"
+            echo "deploy=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          AGE=$(( $(date -u +%s) - LIVE_EPOCH ))
+          echo "live build is ${AGE}s old, threshold is ${MIN_SECONDS}s"
+
+          if [ "$AGE" -ge "$MIN_SECONDS" ]; then
+            echo "deploy=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "too soon - skipping to stay under the Pages build limit"
+            echo "deploy=false" >> "$GITHUB_OUTPUT"
+          fi
+
   refresh:
+    needs: gate
+    if: needs.gate.outputs.deploy == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10      # fail loudly instead of occupying the group for hours
 
