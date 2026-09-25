@@ -1727,12 +1727,20 @@ function renderProjectChart(d) {
   document.getElementById('projectChartCard').style.display = '';
   const labels = sorted.map(([t]) => t);
   const values = sorted.map(([, s]) => +(secToHours(s).toFixed(1)));
+
+  // Share of ALL logged time in the current view, not just the project-tagged
+  // slice — so these deliberately sum to less than 100% when some worklogs have
+  // no project number. Stored on the dataset (plain array, survives the JSON
+  // clone in expandChart) so the tooltip and the CSV export use one source.
+  const totalSecs   = d.totalSeconds || sorted.reduce((sum, [, s]) => sum + s, 0);
+  const percentages = sorted.map(([, s]) => totalSecs > 0 ? +(s / totalSecs * 100).toFixed(1) : 0);
+
   const ctx = document.getElementById('chartProject').getContext('2d');
   S.charts.project = new Chart(ctx, {
     type: 'bar',
     data: {
       labels,
-      datasets: [{ data: values, backgroundColor: PALETTE, borderRadius: 4, borderSkipped: false }],
+      datasets: [{ data: values, percentages, backgroundColor: PALETTE, borderRadius: 4, borderSkipped: false }],
     },
     options: {
       indexAxis: 'y',
@@ -1740,7 +1748,14 @@ function renderProjectChart(d) {
       maintainAspectRatio: false,
       plugins: {
         legend: { display: false },
-        tooltip: { callbacks: { label: ctx => ` ${ctx.raw}h` } },
+        tooltip: {
+          callbacks: {
+            label: ctx => {
+              const pct = ctx.dataset.percentages?.[ctx.dataIndex];
+              return pct == null ? ` ${ctx.raw}h` : ` ${ctx.raw}h · ${pct}% of logged time`;
+            },
+          },
+        },
       },
       scales: {
         x: { beginAtZero: true, ticks: { callback: v => `${v}h` }, grid: { color: Chart.defaults.borderColor } },
@@ -1769,15 +1784,31 @@ function expandChart(chartKey, title) {
   const srcConfig = src.config;
   const ctx = document.getElementById('chartModalCanvas').getContext('2d');
 
+  const clonedOptions = {
+    ...JSON.parse(JSON.stringify(srcConfig.options)),
+    responsive: true,
+    maintainAspectRatio: false,
+    animation: false,
+  };
+
+  // JSON cloning silently drops every function, so the expanded chart lost the
+  // tooltip formatting and the axis tick suffixes. Re-attach them from the
+  // source config so the modal shows the same labels as the card.
+  const srcTooltip = srcConfig.options?.plugins?.tooltip?.callbacks;
+  if (srcTooltip) {
+    clonedOptions.plugins = clonedOptions.plugins || {};
+    clonedOptions.plugins.tooltip = { ...(clonedOptions.plugins.tooltip || {}), callbacks: srcTooltip };
+  }
+  Object.entries(srcConfig.options?.scales || {}).forEach(([axis, cfg]) => {
+    const cb = cfg?.ticks?.callback;
+    if (!cb || !clonedOptions.scales?.[axis]) return;
+    clonedOptions.scales[axis].ticks = { ...(clonedOptions.scales[axis].ticks || {}), callback: cb };
+  });
+
   _modalChart = new Chart(ctx, {
     type: srcConfig.type,
     data: JSON.parse(JSON.stringify(srcConfig.data)),
-    options: {
-      ...JSON.parse(JSON.stringify(srcConfig.options)),
-      responsive: true,
-      maintainAspectRatio: false,
-      animation: false,
-    },
+    options: clonedOptions,
   });
 }
 
@@ -1809,10 +1840,13 @@ function exportChartCSV(chartKey) {
       csv += row.join(',') + '\n';
     });
   } else {
-    csv = 'Label,Hours\n';
-    const vals = data.datasets[0]?.data || [];
+    const ds    = data.datasets[0] || {};
+    const vals  = ds.data || [];
+    const pcts  = ds.percentages;          // present on charts that compute a share
+    csv = pcts ? 'Label,Hours,% of Logged Time\n' : 'Label,Hours\n';
     labels.forEach((lbl, i) => {
-      csv += `${JSON.stringify(String(lbl))},${vals[i] ?? ''}\n`;
+      const row = `${JSON.stringify(String(lbl))},${vals[i] ?? ''}`;
+      csv += pcts ? `${row},${pcts[i] ?? ''}\n` : `${row}\n`;
     });
   }
 
